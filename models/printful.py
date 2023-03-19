@@ -278,7 +278,7 @@ class PrintfulPrintful(models.Model):
                             self._upsert_product_image(product['name'] + "_" + file['type'], file['preview_url'], pt_obj)
 
                     category_ids = []
-                    category_endpoint = f"https://api.printful.com/category/{sync_variant['main_category_id']}"
+                    category_endpoint = f"https://api.printful.com/categories/{sync_variant['main_category_id']}"
                     category_response = self._make_api_request(category_endpoint, headers={})
                     category_data = json.loads(category_response.text)
                     category_id_prod = self._get_category_id(category_data['title'], product['thumbnail_url'])
