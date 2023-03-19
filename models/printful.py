@@ -10,6 +10,15 @@ class PrintfulPrintful(models.Model):
     _name = 'printful.printful'
     _description = "Printful Configuration"
 
+    @sleep_and_retry
+    @limits(calls=100, period=60)
+    def make_api_request(url, headers):
+        response = requests.get(url, headers=headers)
+        if response.status_code == 429:
+            raise requests.exceptions.RequestException('Rate limit exceeded')
+        response.raise_for_status()
+        return response
+    
     store = fields.Char(string="PrintFul Store")
     token = fields.Char(string="PrintFul Token")
     size_attribute_id = fields.Many2one(comodel_name="product.attribute", string="Size Attribute")
@@ -317,12 +326,3 @@ class PrintfulPrintful(models.Model):
             
         except:
             return None
-
-    @sleep_and_retry
-    @limits(calls=100, period=60)
-    def make_api_request(url, headers):
-        response = requests.get(url, headers=headers)
-        if response.status_code == 429:
-            raise requests.exceptions.RequestException('Rate limit exceeded')
-        response.raise_for_status()
-        return response
