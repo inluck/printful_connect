@@ -274,7 +274,7 @@ class PrintfulPrintful(models.Model):
                             img = self._make_api_request(file['preview_url'], headers={})
                         elif multiple_product_images == True and sync_pass < 2:
                             self._upsert_product_image(product['name'] + "_" + file['type'], file['preview_url'], pt_obj)
-                            
+                    
                     product_variant[0].write({
                         'list_price': lowest_price,
                         'volume': variant_data['shipping_rate'],
@@ -295,7 +295,14 @@ class PrintfulPrintful(models.Model):
                         'website_published': variant_data['in_stock'],
 #                         'website_description': ''
                         })
+#             variant_data_endpoint = f"https://api.printful.com/products/variant/{sync_variant['variant_id']}"
+            category_endpoint = f"https://api.printful.com/category/{product['main_category_id']}"
+            category_response = self._make_api_request(category_endpoint, headers={})
+            category_data = json.loads(category_response.text)
+            category_id = self._get_category_id(category_data['title'], product['thumbnail_url'])
+            
             pt_obj.write({
+                'public_categ_ids': [(4, category_id)]
                 'attribute_line_ids': [(4, line.id) for line in size_attribute_line_ids]
             })
                 
@@ -328,6 +335,23 @@ class PrintfulPrintful(models.Model):
             """
             return None
 
+
+    def _get_category_id(self, name, image_url):
+        category = self.env['product.public.category'].search([
+            ('display_name', '=', name)
+        ])
+        img = self._make_api_request(image_url, headers={})
+        try:
+            return category[0].id
+            
+        except:
+            """
+            Create new category
+            """
+            return self.env['product.public.category'].create({
+                'display_name': name,
+                'image_1920': base64.b64encode(img.content)
+            }).id
 
     @sleep_and_retry
     @limits(calls=60, period=60)
