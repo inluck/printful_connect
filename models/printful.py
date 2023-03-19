@@ -2,7 +2,7 @@
 import requests
 import base64
 import json
-from ratelimit import limits
+from ratelimit import limits, sleep_and_retry
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError, AccessError
 import logging
