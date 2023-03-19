@@ -90,7 +90,7 @@ class PrintfulPrintful(models.Model):
         color_attribute = self.env['printful.printful'].search([], limit=1).color_attribute_id
         #_logger.debug(printful['result'])
         for product in printful['result']:
-            img = response = self._make_api_request(url, headers={})
+            img = response = self._make_api_request(product['image'], headers={})
             pt_obj = None
             pt_exist = self.env['product.template'].search([
                     ('printful_ref', '=', str(product['id']))])
