@@ -273,7 +273,7 @@ class PrintfulPrintful(models.Model):
                             img = self._make_api_request(file['preview_url'], headers={})
                         elif multiple_product_images == True:
                             img = self._make_api_request(file['preview_url'], headers={})
-                            self._create_product_image(self, pt_obj, file['type'], base64.b64encode(img.content))
+                            self._create_product_image(file['type'], base64.b64encode(img.content), pt_obj)
                             
                     product_variant[0].write({
                         'list_price': lowest_price,
