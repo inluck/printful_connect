@@ -14,6 +14,7 @@ class PrintfulPrintful(models.Model):
     token = fields.Char(string="PrintFul Token")
     size_attribute_id = fields.Many2one(comodel_name="product.attribute", string="Size Attribute")
     color_attribute_id = fields.Many2one(comodel_name="product.attribute", string="Color Attribute")
+    product_public_category_id = fields.Many2one(comodel_name="product.public.category", string="Public Category)
 
     def action_get_printful_order(self):
         so = self.env['sale.order'].search([])
