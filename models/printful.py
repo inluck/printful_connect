@@ -281,7 +281,7 @@ class PrintfulPrintful(models.Model):
                     category_endpoint = f"https://api.printful.com/categories/{sync_variant['main_category_id']}"
                     category_response = self._make_api_request(category_endpoint, headers={})
                     category_data = json.loads(category_response.text)
-                    category_id_prod = self._get_category_id(category_data['title'], product['thumbnail_url'])
+                    category_id_prod = self._get_category_id(category_data['result']['category']['title'], category_data['result']['category']['image_url'])
                     category_ids.append(category_id_prod)
 
                     if not product_public_category_id[0]:
