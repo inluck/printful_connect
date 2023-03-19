@@ -143,8 +143,9 @@ class PrintfulPrintful(models.Model):
             
             lowest_price = min(product["retail_price"] for product in sync_variants)
 
+            pass = 0
             for sync_variant in sync_variants:
-
+                pass = pass + 1
           
 #                 variants_endpoint = f"https://api.printful.com/store/variants/@{sync_variant['external_id']}"
 #                 variants_response = requests.get(variants_endpoint, headers=headers)
@@ -271,7 +272,7 @@ class PrintfulPrintful(models.Model):
                     for file in sync_variant['files']:
                         if file['type'] == 'preview':
                             img = self._make_api_request(file['preview_url'], headers={})
-                        elif multiple_product_images == True:
+                        elif multiple_product_images == True and pass < 2:
                             self._upsert_product_image(product['name'] + "_" + file['type'], file['preview_url'], pt_obj)
                             
                     product_variant[0].write({
@@ -346,7 +347,7 @@ class PrintfulPrintful(models.Model):
         img = self._make_api_request(image_url, headers={})
         product_image = self.env['product.image'].search([('name', '=', name), ('product_tmpl_id', '=', product.id)], limit=1)
         if product_image:
-            product_image.write({'image_1920': image_data})
+            product_image.write('image_1920': base64.b64encode(img.content))
         else:
             product_image = self.env['product.image'].create({
                 'name': name,
