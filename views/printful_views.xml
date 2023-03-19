@@ -45,14 +45,14 @@
         <field name="view_mode">tree,form</field>
     </record>
 
-    <menuitem action="action_printful_view_stock"
+    <menuitem action="action_printful_view"
               id="action_printful_root"
               parent="stock.menu_stock_config_settings"
               sequence="20"
     />
 
-    <menuitem action="action_printful_view_website"
-              id="action_printful_root_website"
+    <menuitem action="action_printful_view"
+              id="action_printful_root"
               parent="website.menu_stock_config_settings"
               sequence="20"
     />
