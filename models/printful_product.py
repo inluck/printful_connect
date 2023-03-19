@@ -25,14 +25,14 @@ from odoo import api, fields, models, _
 from odoo.exceptions import UserError, AccessError
 
 
-class ProductTemplateAttributeCalue(models.Model):
-    _inherit = 'product.template.attribute.value'
+# class ProductTemplateAttributeCalue(models.Model):
+#     _inherit = 'product.template.attribute.value'
 
-    printful_ref = fields.Char()
-    printful_external_ref = fields.Char()
-    printful_variant_ref = fields.Char()
-    printful_variant_external_ref = fields.Char()
-    printful_sku = fields.Char()
+#     printful_ref = fields.Char()
+#     printful_external_ref = fields.Char()
+#     printful_variant_ref = fields.Char()
+#     printful_variant_external_ref = fields.Char()
+#     printful_sku = fields.Char()
     
 class ProductProduct(models.Model):
     _inherit = 'product.product'
@@ -47,43 +47,44 @@ class ProductProduct(models.Model):
     printful_color = fields.Char()
     printful_product_in_stock = fields.Boolean(default=True)
     printful_variant_id = fields.Char()
-#     printful_product_id = fields.Many2one('printful.product')
+    printful_product = fields.Many2one('printful.template')
+    printful_shipping = fields.Char(string'Estimated Delivery')
 
     def action_set_printful_data(self):
-        for rec in self:
-            headers = {'Authorization': 'Bearer ' + self.env['printful.printful'].search([], limit=1).token}
-            url = "https://api.printful.com/store/variants/" + rec.printful_variant_external_ref
-            response = requests.get(url, headers=headers)
-            printful = response.json()
+#         for rec in self:
+#             headers = {'Authorization': 'Bearer ' + self.env['printful.printful'].search([], limit=1).token}
+#             url = "https://api.printful.com/store/variants/" + rec.printful_variant_external_ref
+#             response = requests.get(url, headers=headers)
+#             printful = response.json()
 
-            if printful['code'] != 200:
-                raise UserError(str(printful))
-            else:
-                img = requests.get(printful['result']['product']['image'], headers={})
-                in_stock = True
-                stocks = requests.get("https://api.printful.com/products/variant/" + str(printful['result']['variant_id']))
-                instock = stocks.json()
-                if instock['code'] == 200:
-                    in_stock = instock['result']['variant']['in_stock']
+#             if printful['code'] != 200:
+#                 raise UserError(str(printful))
+#             else:
+#                 img = requests.get(printful['result']['product']['image'], headers={})
+#                 in_stock = True
+#                 stocks = requests.get("https://api.printful.com/products/variant/" + str(printful['result']['variant_id']))
+#                 instock = stocks.json()
+#                 if instock['code'] == 200:
+#                     in_stock = instock['result']['variant']['in_stock']
 
-                color = None
-                size = None
-                na = printful['result']['product']['name']
-                color = None
-                size = None
-                try:
-                    color = na.split('(')[1].split(')')[0].split('/')[0]
-                except:
-                    pass
-                try:
-                    size = na.split('(')[1].split(')')[0].split('/')[1]
-                except:
-                    pass
-                rec.printful_sku = printful['result']['sku']
-                rec.printful_currency = printful['result']['currency']
-                rec.printful_size = size
-                rec.printful_color = color
-                rec.image_1920 = base64.b64encode(img.content)
-                rec.name = printful['result']['name']
-                rec.printful_product_in_stock = in_stock
-                rec.printful_variant_id = printful['result']['variant_id']
+#                 color = None
+#                 size = None
+#                 na = printful['result']['product']['name']
+#                 color = None
+#                 size = None
+#                 try:
+#                     color = na.split('(')[1].split(')')[0].split('/')[0]
+#                 except:
+#                     pass
+#                 try:
+#                     size = na.split('(')[1].split(')')[0].split('/')[1]
+#                 except:
+#                     pass
+#                 rec.printful_sku = printful['result']['sku']
+#                 rec.printful_currency = printful['result']['currency']
+#                 rec.printful_size = size
+#                 rec.printful_color = color
+#                 rec.image_1920 = base64.b64encode(img.content)
+#                 rec.name = printful['result']['name']
+#                 rec.printful_product_in_stock = in_stock
+#                 rec.printful_variant_id = printful['result']['variant_id']
