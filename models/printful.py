@@ -141,13 +141,13 @@ class PrintfulPrintful(models.Model):
             for sync_variant in sync_variants:
 
           
-                variants_endpoint = f"https://api.printful.com/store/variants/@{sync_variant['external_id']}"
-                variants_response = requests.get(variants_endpoint, headers=headers)
-                variant = json.loads(variants_response.text)
+#                 variants_endpoint = f"https://api.printful.com/store/variants/@{sync_variant['external_id']}"
+#                 variants_response = requests.get(variants_endpoint, headers=headers)
+#                 variant = json.loads(variants_response.text)
 
-                if variant['code'] != 200:
-                    _logger.error(f"Failed to retrieve Printful variants: {variant['result']}")
-                    continue
+#                 if variant['code'] != 200:
+#                     _logger.error(f"Failed to retrieve Printful variants: {variant['result']}")
+#                     continue
                     
                 variant_data_endpoint = f"https://api.printful.com/products/variant/{sync_variant['variant_id']}"
                 variant_response = requests.get(variant_data_endpoint)
@@ -246,9 +246,9 @@ class PrintfulPrintful(models.Model):
                       "items": [
                         {
                           "variant_id": sync_variant['variant_id'],
-                          "external_variant_id": variant['result']['external_id'],
+                          "external_variant_id": sync_variant['external_id'],
                           "quantity": 1,
-                          "value": variant['result']['retail_price']
+                          "value": sync_variant['retail_price']
                         }
                       ],
                       "currency": "CAD",
@@ -263,7 +263,7 @@ class PrintfulPrintful(models.Model):
                             variant_data['shipping_rate'] = rate['rate']
                     img = None
 
-                    for file in variant['result']['files']:
+                    for file in sync_variant['files']:
                         if file['type'] == 'preview':
                             img = requests.get(file['preview_url'], headers={})
                             _logger.debug(file['preview_url'])
@@ -271,18 +271,18 @@ class PrintfulPrintful(models.Model):
                     product_variant[0].write({
                         'list_price': lowest_price,
                         'volume': variant_data['shipping_rate'],
-                        'default_code': variant['result']['sku'],
-                        'printful_variant_ref': variant['result']['variant_id'],
+                        'default_code': sync_variant['sku'],
+                        'printful_variant_ref': sync_variant['variant_id'],
                         'printful_variant_id': sync_variant['variant_id'],
                         'name': product['name'],
                         'image_1920': base64.b64encode(img.content),
-                        'printful_sku': variant['result']['sku'],
-                        'printful_currency':  variant['result']['currency'],
+                        'printful_sku': sync_variant['sku'],
+                        'printful_currency':  sync_variant['currency'],
                         'printful_size':  variant_data['size'],
                         'printful_color':  variant_data['color'],
                         'printful_product': pt_obj.id,
-                        'printful_variant_ref': variant['result']['external_id'],
-                        'printful_variant_external_ref': variant['result']['id'],
+                        'printful_variant_ref': sync_variant['external_id'],
+                        'printful_variant_external_ref': sync_variant['id'],
                         'printful_product_in_stock': variant_data['in_stock'],
                         'description_sale': variant_product_data['description'],
                         'website_published': variant_data['in_stock'],
