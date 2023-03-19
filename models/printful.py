@@ -21,8 +21,8 @@ class PrintfulPrintful(models.Model):
         headers = {'Authorization': 'Bearer ' + self.env['printful.printful'].search([], limit=1).token}
         url = "https://api.printful.com/warehouse/products?query=some?offset=0&limit=100"
         response = requests.get(url, headers=headers)
-        printfull = response.json()
-        raise UserError(str(printfull))
+        printful = response.json()
+        raise UserError(str(printful))
 
 
     def action_get_printful_order(self):
@@ -32,8 +32,8 @@ class PrintfulPrintful(models.Model):
 
         url = "https://api.printful.com/orders"
         response = requests.get(url, headers=headers)
-        printfull = response.json()
-        for order in printfull['result']:
+        printful = response.json()
+        for order in printful['result']:
             so_exists = so.filtered(lambda x: x.order_ref == "#PF" + str(order['id']))
             if not so_exists:
                 customer = partner.create({
@@ -92,12 +92,12 @@ class PrintfulPrintful(models.Model):
         headers = {'Authorization': 'Bearer ' + self.env['printful.printful'].search([], limit=1).token}
         url = "https://api.printful.com/store/products"
         response = requests.get(url, headers=headers)
-        printfull = response.json()
+        printful = response.json()
 
         size_attribute = self.env['printful.printful'].search([], limit=1).size_attribute_id
         color_attribute = self.env['printful.printful'].search([], limit=1).color_attribute_id
-        #_logger.debug(printfull['result'])
-        for product in printfull['result']:
+        #_logger.debug(printful['result'])
+        for product in printful['result']:
             img = requests.get(product['thumbnail_url'], headers={})
             pt_obj = None
             pt_exist = self.env['product.template'].search([

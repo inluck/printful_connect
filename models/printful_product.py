@@ -54,21 +54,21 @@ class ProductProduct(models.Model):
             headers = {'Authorization': 'Bearer ' + self.env['printful.printful'].search([], limit=1).token}
             url = "https://api.printful.com/store/variants/" + rec.printful_variant_external_ref
             response = requests.get(url, headers=headers)
-            printfull = response.json()
+            printful = response.json()
 
-            if printfull['code'] != 200:
-                raise UserError(str(printfull))
+            if printful['code'] != 200:
+                raise UserError(str(printful))
             else:
-                img = requests.get(printfull['result']['product']['image'], headers={})
+                img = requests.get(printful['result']['product']['image'], headers={})
                 in_stock = True
-                stocks = requests.get("https://api.printful.com/products/variant/" + str(printfull['result']['variant_id']))
+                stocks = requests.get("https://api.printful.com/products/variant/" + str(printful['result']['variant_id']))
                 instock = stocks.json()
                 if instock['code'] == 200:
                     in_stock = instock['result']['variant']['in_stock']
 
                 color = None
                 size = None
-                na = printfull['result']['product']['name']
+                na = printful['result']['product']['name']
                 color = None
                 size = None
                 try:
@@ -79,11 +79,11 @@ class ProductProduct(models.Model):
                     size = na.split('(')[1].split(')')[0].split('/')[1]
                 except:
                     pass
-                rec.printful_sku = printfull['result']['sku']
-                rec.printful_currency = printfull['result']['currency']
+                rec.printful_sku = printful['result']['sku']
+                rec.printful_currency = printful['result']['currency']
                 rec.printful_size = size
                 rec.printful_color = color
                 rec.image_1920 = base64.b64encode(img.content)
-                rec.name = printfull['result']['name']
+                rec.name = printful['result']['name']
                 rec.printful_product_in_stock = in_stock
-                rec.printful_variant_id = printfull['result']['variant_id']
+                rec.printful_variant_id = printful['result']['variant_id']

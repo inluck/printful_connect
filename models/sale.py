@@ -101,34 +101,34 @@ class SaleOrder(models.Model):
             }
             data = json.dumps(data)
             response = requests.post(url, headers=headers, data=data)
-            printfull = response.json()
-            if printfull['code'] != 200:
-                one = str(printfull)
+            printful = response.json()
+            if printful['code'] != 200:
+                one = str(printful)
                 two = str(data)
                 raise UserError(str(one + two))
             else:
-                rec.order_ref = "#PF" + str(printfull['result']['id'])
-                rec.order_external_ref = printfull['result']['external_id']
-                rec.order_store_ref = printfull['result']['store']
-                rec.order_shipping = printfull['result']['shipping']
-                rec.order_shipping_service_name = printfull['result']['shipping_service_name']
-                rec.printful_order_notes = printfull['result']['notes']
-                rec.order_currency = printfull['result']['costs']['currency']
-                rec.order_subtotal = printfull['result']['costs']['subtotal']
-                rec.order_discount = printfull['result']['costs']['discount']
-                rec.shipping = printfull['result']['costs']['shipping']
-                rec.order_digitization = printfull['result']['costs']['digitization']
-                rec.order_additional_fee = printfull['result']['costs']['additional_fee']
-                rec.order_fulfillment_fee = printfull['result']['costs']['fulfillment_fee']
-                rec.order_retail_delivery_fee = printfull['result']['costs']['retail_delivery_fee']
-                rec.order_tax = printfull['result']['costs']['tax']
-                rec.order_total = printfull['result']['costs']['total']
-                rec.printful_dashboard_url = printfull['result']['dashboard_url']
-                rec.customer_pays = printfull['result']['pricing_breakdown'][0]['customer_pays']
-                rec.printful_price = printfull['result']['pricing_breakdown'][0]['printful_price']
-                rec.profit = printfull['result']['pricing_breakdown'][0]['profit']
-                rec.currency_symbol = printfull['result']['pricing_breakdown'][0]['currency_symbol']
-                one = str(printfull)
+                rec.order_ref = "#PF" + str(printful['result']['id'])
+                rec.order_external_ref = printful['result']['external_id']
+                rec.order_store_ref = printful['result']['store']
+                rec.order_shipping = printful['result']['shipping']
+                rec.order_shipping_service_name = printful['result']['shipping_service_name']
+                rec.printful_order_notes = printful['result']['notes']
+                rec.order_currency = printful['result']['costs']['currency']
+                rec.order_subtotal = printful['result']['costs']['subtotal']
+                rec.order_discount = printful['result']['costs']['discount']
+                rec.shipping = printful['result']['costs']['shipping']
+                rec.order_digitization = printful['result']['costs']['digitization']
+                rec.order_additional_fee = printful['result']['costs']['additional_fee']
+                rec.order_fulfillment_fee = printful['result']['costs']['fulfillment_fee']
+                rec.order_retail_delivery_fee = printful['result']['costs']['retail_delivery_fee']
+                rec.order_tax = printful['result']['costs']['tax']
+                rec.order_total = printful['result']['costs']['total']
+                rec.printful_dashboard_url = printful['result']['dashboard_url']
+                rec.customer_pays = printful['result']['pricing_breakdown'][0]['customer_pays']
+                rec.printful_price = printful['result']['pricing_breakdown'][0]['printful_price']
+                rec.profit = printful['result']['pricing_breakdown'][0]['profit']
+                rec.currency_symbol = printful['result']['pricing_breakdown'][0]['currency_symbol']
+                one = str(printful)
                 two = str(data)
                 raise UserError(str(one + two))
 
