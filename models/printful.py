@@ -272,8 +272,7 @@ class PrintfulPrintful(models.Model):
                         if file['type'] == 'preview':
                             img = self._make_api_request(file['preview_url'], headers={})
                         elif multiple_product_images == True:
-                            img = self._make_api_request(file['preview_url'], headers={})
-                            self._create_product_image(file['type'], base64.b64encode(img.content), pt_obj)
+                            self._upsert_product_image(product['name'] + "_" + file['type'], file['preview_url'], pt_obj)
                             
                     product_variant[0].write({
                         'list_price': lowest_price,
@@ -339,15 +338,19 @@ class PrintfulPrintful(models.Model):
         return response
     
     
-    def _create_product_image(self, name, image_data, product):
+
+    def _upsert_product_image(self, name, image_url, product):
         """
         Create a new product image record and attach it to the provided product template.
         """
-        product_image = self.env['product.image'].create({
-            'name': name,
-            'product_tmpl_id': product.id,
-            'image_1024': image_data,
-        })
-        product.write({
-            'product_template_image_ids': [(4, product_image.id)]
-        })
+        img = self._make_api_request(image_url, headers={})
+        product_image = self.env['product.image'].search([('name', '=', name), ('product_tmpl_id', '=', product.id)], limit=1)
+        if product_image:
+            product_image.write({'image_1920': image_data})
+        else:
+            product_image = self.env['product.image'].create({
+                'name': name,
+                'product_tmpl_id': product.id,
+                'image_1920': base64.b64encode(img.content),
+            })
+        product.product_template_image_ids = [(4, product_image.id)]
