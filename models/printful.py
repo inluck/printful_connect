@@ -22,7 +22,7 @@ class PrintfulPrintful(models.Model):
         headers = {'Authorization': 'Bearer ' + self.env['printful.printful'].search([], limit=1).token}
 
         url = "https://api.printful.com/orders"
-        response = requests.get(url, headers=headers)
+        response = make_api_request(url, headers)
         printful = response.json()
         for order in printful['result']:
             so_exists = so.filtered(lambda x: x.order_ref == "#PF" + str(order['id']))
@@ -82,14 +82,14 @@ class PrintfulPrintful(models.Model):
     def action_get_printful_product(self):
         headers = {'Authorization': 'Bearer ' + self.env['printful.printful'].search([], limit=1).token}
         url = "https://api.printful.com/store/products"
-        response = requests.get(url, headers=headers)
+        response = make_api_request(url, headers)
         printful = response.json()
 
         size_attribute = self.env['printful.printful'].search([], limit=1).size_attribute_id
         color_attribute = self.env['printful.printful'].search([], limit=1).color_attribute_id
         #_logger.debug(printful['result'])
         for product in printful['result']:
-            img = requests.get(product['thumbnail_url'], headers={})
+            img = response = make_api_request(url, headers={})
             pt_obj = None
             pt_exist = self.env['product.template'].search([
                     ('printful_ref', '=', str(product['id']))])
@@ -113,7 +113,7 @@ class PrintfulPrintful(models.Model):
                 })
 
             product_details_endpoint = f"https://api.printful.com/store/products/{product['id']}"
-            product_details_response = requests.get(product_details_endpoint,  headers=headers)
+            product_details_response = make_api_request(product_details_endpoint,  headers=headers)
             product_details = json.loads(product_details_response.text)
 
             if product_details['code'] != 200:
@@ -150,7 +150,7 @@ class PrintfulPrintful(models.Model):
 #                     continue
                     
                 variant_data_endpoint = f"https://api.printful.com/products/variant/{sync_variant['variant_id']}"
-                variant_response = requests.get(variant_data_endpoint)
+                variant_response = make_api_request(variant_data_endpoint, headers={})
 
                 if variant_response.status_code != 200:
                     _logger.warning(f"Failed to retrieve Printful variant data for variant ID {sync_variant['variant_id']}: {variant_response.text}")
@@ -265,7 +265,7 @@ class PrintfulPrintful(models.Model):
 
                     for file in sync_variant['files']:
                         if file['type'] == 'preview':
-                            img = requests.get(file['preview_url'], headers={})
+                            img = make_api_request(file['preview_url'], headers={})
 #                             _logger.debug(file['preview_url'])
 #                             _logger.debug(variant['result']['name'])
                     product_variant[0].write({
@@ -317,3 +317,12 @@ class PrintfulPrintful(models.Model):
             
         except:
             return None
+
+    @sleep_and_retry
+    @limits(calls=100, period=60)
+    def make_api_request(url, headers):
+        response = requests.get(url, headers=headers)
+        if response.status_code == 429:
+            raise requests.exceptions.RequestException('Rate limit exceeded')
+        response.raise_for_status()
+        return response
