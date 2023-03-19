@@ -5,7 +5,7 @@
 
     'author': "Jon Mitchell",
     'website': "https://easier.digital/",
-    'license': "MIT",
+    'license': "LGPL-3",
     'category': 'Production',
     'version': '16.0',
 
