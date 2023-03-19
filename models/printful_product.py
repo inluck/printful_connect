@@ -32,10 +32,11 @@ class ProductProduct(models.Model):
 
     def action_set_printful_data(self):
         for rec in self:
-            headers = {'Authorization': 'Bearer ' + self.env['printful.printful'].search([], limit=1).token}
-            url = "https://api.printful.com/store/variants/" + rec.printful_variant_external_ref
-            response = requests.get(url, headers=headers)
-            printful = response.json()
+            rem = False
+#             headers = {'Authorization': 'Bearer ' + self.env['printful.printful'].search([], limit=1).token}
+#             url = "https://api.printful.com/store/variants/" + rec.printful_variant_external_ref
+#             response = requests.get(url, headers=headers)
+#             printful = response.json()
 
 #             if printful['code'] != 200:
 #                 raise UserError(str(printful))
