@@ -87,7 +87,9 @@ class PrintfulPrintful(models.Model):
         size_attribute = self.env['printful.printful'].search([], limit=1).size_attribute_id
         color_attribute = self.env['printful.printful'].search([], limit=1).color_attribute_id
         multiple_product_images = self.env['printful.printful'].search([], limit=1).multiple_product_images
-        
+        store_name = self.env['printful.printful'].search([], limit=1).name
+        product_public_category_id = self.env['printful.printful'].search([], limit=1).product_public_category_id
+            
         headers = {'Authorization': 'Bearer ' + token}
         url = "https://api.printful.com/store/products"
         response = self._make_api_request(url, headers)
@@ -274,7 +276,21 @@ class PrintfulPrintful(models.Model):
                             img = self._make_api_request(file['preview_url'], headers={})
                         elif multiple_product_images == True and sync_pass < 2:
                             self._upsert_product_image(product['name'] + "_" + file['type'], file['preview_url'], pt_obj)
-                    
+
+                    category_ids = []
+                    category_endpoint = f"https://api.printful.com/category/{sync_variant['main_category_id']}"
+                    category_response = self._make_api_request(category_endpoint, headers={})
+                    category_data = json.loads(category_response.text)
+                    category_id_prod = self._get_category_id(category_data['title'], product['thumbnail_url'])
+                    category_ids.append(category_id_prod)
+
+                    if not product_public_category_id[0]
+                        category_id_store = self._get_category_id(store_name, product['thumbnail_url'])
+                        category_ids.append(category_id_store)
+                    else:
+                        category_id_store = self._get_category_id(product_public_category_id[0].display_name, product['thumbnail_url'])
+                        category_ids.append(category_id_store)
+                        
                     product_variant[0].write({
                         'list_price': lowest_price,
                         'volume': variant_data['shipping_rate'],
@@ -293,16 +309,11 @@ class PrintfulPrintful(models.Model):
                         'printful_product_in_stock': variant_data['in_stock'],
                         'description_sale': variant_product_data['description'],
                         'website_published': variant_data['in_stock'],
+                        'public_categ_ids': [(4, line) for line in category_ids]
 #                         'website_description': ''
                         })
-#             variant_data_endpoint = f"https://api.printful.com/products/variant/{sync_variant['variant_id']}"
-            category_endpoint = f"https://api.printful.com/category/{product['main_category_id']}"
-            category_response = self._make_api_request(category_endpoint, headers={})
-            category_data = json.loads(category_response.text)
-            category_id = self._get_category_id(category_data['title'], product['thumbnail_url'])
             
             pt_obj.write({
-                'public_categ_ids': [(4, category_id)],
                 'attribute_line_ids': [(4, line.id) for line in size_attribute_line_ids]
             })
                 
