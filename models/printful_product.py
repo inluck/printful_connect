@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 from odoo import models, fields, api, _
-from odoo.exceptions import UserError
 import requests
 import random
 import string
@@ -8,32 +7,13 @@ import requests
 import base64
 import io
 from PyPDF2 import PdfFileReader
-from odoo import api, fields, models, _
 from odoo.exceptions import UserError, AccessError
 from odoo.tools import pdf
 import logging
 import re
 import html2text
-from odoo import models, fields, api, _
-from odoo.exceptions import UserError
-import requests
-import random
 import json
-import requests
-import base64
-from odoo import api, fields, models, _
-from odoo.exceptions import UserError, AccessError
 
-
-# class ProductTemplateAttributeCalue(models.Model):
-#     _inherit = 'product.template.attribute.value'
-
-#     printful_ref = fields.Char()
-#     printful_external_ref = fields.Char()
-#     printful_variant_ref = fields.Char()
-#     printful_variant_external_ref = fields.Char()
-#     printful_sku = fields.Char()
-    
 class ProductProduct(models.Model):
     _inherit = 'product.product'
 
@@ -48,7 +28,7 @@ class ProductProduct(models.Model):
     printful_product_in_stock = fields.Boolean(default=True)
     printful_variant_id = fields.Char()
     printful_product = fields.Many2one('printful.template')
-    printful_shipping = fields.Char(string'Estimated Delivery')
+    printful_shipping = fields.Char(string='Estimated Delivery')
 
     def action_set_printful_data(self):
 #         for rec in self:
