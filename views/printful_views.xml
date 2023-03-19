@@ -34,7 +34,7 @@
         <field name="model">printful.printful</field>
         <field name="arch" type="xml">
             <tree >
-                <field name="store"/>
+                <field name="name"/>
             </tree>
         </field>
     </record>
@@ -45,10 +45,15 @@
         <field name="view_mode">tree,form</field>
     </record>
 
-    <menuitem action="action_printful_view"
+    <menuitem action="action_printful_view_stock"
               id="action_printful_root"
               parent="stock.menu_stock_config_settings"
               sequence="20"
     />
 
+    <menuitem action="action_printful_view_website"
+              id="action_printful_root_website"
+              parent="website.menu_stock_config_settings"
+              sequence="20"
+    />
 </odoo>
