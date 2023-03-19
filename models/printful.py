@@ -11,7 +11,7 @@ class PrintfulPrintful(models.Model):
     _name = 'printful.printful'
     _description = "Printful Configuration"
     
-    store = fields.Char(string="PrintFul Store")
+    name = fields.Char(string="PrintFul Store")
     token = fields.Char(string="PrintFul Token")
     size_attribute_id = fields.Many2one(comodel_name="product.attribute", string="Size Attribute")
     color_attribute_id = fields.Many2one(comodel_name="product.attribute", string="Color Attribute")
