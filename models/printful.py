@@ -347,7 +347,7 @@ class PrintfulPrintful(models.Model):
         img = self._make_api_request(image_url, headers={})
         product_image = self.env['product.image'].search([('name', '=', name), ('product_tmpl_id', '=', product.id)], limit=1)
         if product_image:
-            product_image.write('image_1920': base64.b64encode(img.content))
+            product_image.write({'image_1920': image_data})
         else:
             product_image = self.env['product.image'].create({
                 'name': name,
