@@ -323,7 +323,9 @@ class PrintfulPrintful(models.Model):
             return attribute_line[0]
             
         except:
-            // add create() for product.attribute.line
+            """
+            add create() for product.attribute.line
+            """
             return None
 
 
