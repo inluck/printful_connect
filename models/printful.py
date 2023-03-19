@@ -10,20 +10,10 @@ class PrintfulPrintful(models.Model):
     _name = 'printful.printful'
     _description = "Printful Printful"
 
-    name = fields.Char(string="PrintFul User")
     store = fields.Char(string="PrintFul Store")
     token = fields.Char(string="PrintFul Token")
     size_attribute_id = fields.Many2one(comodel_name="product.attribute", string="Size Attribute")
     color_attribute_id = fields.Many2one(comodel_name="product.attribute", string="Color Attribute")
-
-
-    def abc(self):
-        headers = {'Authorization': 'Bearer ' + self.env['printful.printful'].search([], limit=1).token}
-        url = "https://api.printful.com/warehouse/products?query=some?offset=0&limit=100"
-        response = requests.get(url, headers=headers)
-        printful = response.json()
-        raise UserError(str(printful))
-
 
     def action_get_printful_order(self):
         so = self.env['sale.order'].search([])
@@ -146,16 +136,13 @@ class PrintfulPrintful(models.Model):
             
             
             lowest_price = min(product["retail_price"] for product in sync_variants)
-            _logger.debug(lowest_price)
 
             for sync_variant in sync_variants:
 
           
                 variants_endpoint = f"https://api.printful.com/store/variants/@{sync_variant['external_id']}"
-#                 #_logger.debug(sync_variant)
                 variants_response = requests.get(variants_endpoint, headers=headers)
                 variant = json.loads(variants_response.text)
-#                 #_logger.debug(variant)
 
                 if variant['code'] != 200:
                     _logger.error(f"Failed to retrieve Printful variants: {variant['result']}")
@@ -174,27 +161,13 @@ class PrintfulPrintful(models.Model):
                 #_logger.debug(variant_data.get('size'))
                 if not variant_data.get('size'):
                     _logger.warning(f"No size data found for variant ID {sync_variant['variant_id']}")
-#                     variant_data['size'] = "M"
- #                _logger.debug("variant size: ")
-#                 _logger.debug(variant_data.get('size'))
-#                 _logger.debug(variant_data.get('color'))
                 
                 markup_price = float(sync_variant['retail_price']) * float(1.00)
-#                 list_price =  round(markup_price + float(shipping_rate))
                 list_price = markup_price
-             #    _logger.debug("boop 7")
-#                 _logger.debug(shipping_rate)
                 size_attribute_value = self._get_attribute_value(size_attribute, variant_data['size'])
                 variant_ids = []
-                # value_ids = [size_attribute_value, color_attribute_value]
-
-
                 size_attribute_line = self._get_attribute_line(size_attribute, pt_obj.id)
 
-
-
-#                 _logger.debug("on the field")
-#                 _logger.debug(size_attribute_value)
                 if variant_data['size']:                        
                     if size_attribute_line == None:
                         size_attribute_line = self.env['product.template.attribute.line'].create({
@@ -208,11 +181,9 @@ class PrintfulPrintful(models.Model):
                         size_attribute_line.write({
                             'value_ids': [(4, size_attribute_value)]
                         })
-                        #_logger.debug(size_attribute_line)
                         variant_ids.append(size_attribute_line[0].id)
                 
                     ptav_obj = self.env['product.template.attribute.value'].search([
-        #                         ('attribute_line_ids.attribute_id', '=', attribute_id_1),
                         ('attribute_line_id', 'in', [size_attribute_line.id]),
                         ('name', '=', variant_data['size']),
                         ('product_tmpl_id', '=', pt_obj.id)]
@@ -221,11 +192,11 @@ class PrintfulPrintful(models.Model):
                     ptav_obj.write({
                         'price_extra': price_extra
                     })
-                    _logger.debug(ptav_obj)
+
                 if variant_data['color']:
                     color_attribute_value = self._get_attribute_value(color_attribute, variant_data['color'])
                     color_attribute_line = self._get_attribute_line(color_attribute, pt_obj.id)
-                    #_logger.debug(variant_data['color'])
+
                     if color_attribute_line == None:
                         color_attribute_line = self.env['product.template.attribute.line'].create({
                             'product_tmpl_id': pt_obj.id,
@@ -233,41 +204,13 @@ class PrintfulPrintful(models.Model):
                             'value_ids': [(4, color_attribute_value)]
                         })
                         size_attribute_line_ids.append(color_attribute_line)
-                        #_logger.debug(color_attribute_line)
                         variant_ids.append(color_attribute_line[0].id)
                     else:
                         color_attribute_line.write({
                             'value_ids': [(4, color_attribute_value)]
                         })
-                        #_logger.debug(color_attribute_line)
                         variant_ids.append(color_attribute_line[0].id)
 
-#                     if not variant_data['size']:
-#                         ptav_obj = self.env['product.template.attribute.value'].search([
-#             #                         ('attribute_line_ids.attribute_id', '=', attribute_id_1),
-#                             ('attribute_line_id', 'in', [color_attribute_line.id]),
-#                             ('name', '=', variant_data['size']),
-#                             ('product_tmpl_id', '=', pt_obj.id)]
-#                         )
-#                         ptav_obj.write({
-#                             'price_extra': list_price
-#                         })
-#                         _logger.debug(ptav_obj)
-#                     
-                    #_logger.debug("boop2")
-                    #_logger.debug(variant_ids)
-
-#                 product_variant = self.env['product.product'].search([
-#     #                         ('attribute_line_ids.attribute_id', '=', attribute_id_1),
-#                     ('attribute_line_ids.value_ids', 'in', [size_attribute_value]),
-#                     '&',
-#                     ('attribute_line_ids.value_ids', 'in', [color_attribute_value]),
-#                     '&',
-#                     ('product_tmpl_id', '=', pt_obj.id)]
-# #                     order='id desc',
-# #                     limit=1
-#                 )
-#                 #_logger.debug(color_attribute_line.)
                 product_variant = None
                 if color_attribute_line == None:
                     product_variant = self.env['product.product'].search([
@@ -287,19 +230,8 @@ class PrintfulPrintful(models.Model):
                     product_variant = self.env['product.product'].search([
                         ('attribute_line_ids', 'in', [color_attribute_line.id, size_attribute_line.id]),
                         ('product_template_variant_value_ids', '!=', False),
-    #                     ('attribute_line_ids.value_ids', 'in', [size_attribute_value]),
-    #                     ('attribute_line_ids.attribute_id', '=', size_attribute[0].id),
-    #                     ('product_tmpl_id', '=', pt_obj.id),
-    #                     ('active', '=', True),
-    #                     '&',
-    #                     ('attribute_line_ids.value_ids', 'in', [color_attribute_value]),
-    #                     ('attribute_line_ids.attribute_id', '=', color_attribute[0].id),
-    #                     ('product_tmpl_id', '=', pt_obj.id),
-    #                     ('active', '=', True)
                     ],order='id desc')
 
-                #_logger.debug("boop5")
-                #_logger.debug(product_variant)
                 if product_variant:
                     shipping_data = {
                       "recipient": {
@@ -322,34 +254,26 @@ class PrintfulPrintful(models.Model):
                       "locale": "en_US"
                     }
                     shipping_endpoint = f"https://api.printful.com/shipping/rates"
-    #                 #_logger.debug(sync_variant)
                     shipping_response = requests.post(shipping_endpoint, json=shipping_data, headers=headers)
                     shipping_data = json.loads(shipping_response.text)
-#                     shipping_rate = 10.00
-                    _logger.debug(shipping_data)
                     for rate in shipping_data['result']:
-                        _logger.debug("boop 6")
-                        _logger.debug(rate['id'])
+
                         if rate['id'] == "STANDARD":
                             variant_data['shipping_rate'] = rate['rate']
                     img = None
-                    _logger.debug(variant_data['shipping_rate'])
+
                     for file in variant['result']['files']:
                         if file['type'] == 'preview':
                             img = requests.get(file['preview_url'], headers={})
                             _logger.debug(file['preview_url'])
                             _logger.debug(variant['result']['name'])
-                            #_logger.debug(file['preview_url'])
-#                     img = requests.get(variant['result']['product']['image'], headers={})
                     product_variant[0].write({
                         'list_price': lowest_price,
                         'volume': variant_data['shipping_rate'],
                         'default_code': variant['result']['sku'],
                         'printful_variant_ref': variant['result']['variant_id'],
                         'printful_variant_id': sync_variant['variant_id'],
-#                             'printful_product_id': pt_obj.id,
                         'name': product['name'],
-#                             'standard_price': variant['result']['retail_price'],
                         'image_1920': base64.b64encode(img.content),
                         'printful_sku': variant['result']['sku'],
                         'printful_currency':  variant['result']['currency'],
@@ -362,10 +286,6 @@ class PrintfulPrintful(models.Model):
                         'website_published': variant_data['in_stock'],
                         'website_description': ''
                         })
-#                         product_variant = product_variant[0].id
-#                         #_logger.debug(product_variant)
-#                     #_logger.debug(self._get_product_product(variant_ids))
-
             pt_obj.write({
                 'attribute_line_ids': [(4, line.id) for line in size_attribute_line_ids]
             })
@@ -375,16 +295,10 @@ class PrintfulPrintful(models.Model):
             ('attribute_id', '=', attribute_id[0].id),
             ('name', '=', value_name),
         ])
-        _logger.debug("do we make new?")
-        _logger.debug(attribute_value)
         if attribute_value.id:
-            _logger.debug("exisiting")
-            _logger.debug(attribute_value.id)
             return attribute_value.id
             
         elif value_name:
-            _logger.debug("newbie")
-            _logger.debug(value_name)
             return self.env['product.attribute.value'].create({
                 'name': value_name,
                 'attribute_id': attribute_id[0].id,
@@ -396,28 +310,8 @@ class PrintfulPrintful(models.Model):
             ('attribute_id', '=', attribute_id[0].id),
             ('product_tmpl_id', '=', tmpl_id),
         ])
-        #_logger.debug(attribute_line)
         try:
             return attribute_line[0]
             
         except:
             return None
-
-
-#         return self.env['product.attribute.value'].create({
-#             'name': value_name,
-#             'attribute_id': attribute_id[0],
-#         }).id
-
-
-
-#     def _get_product_product(self, variant_ids):
-#         new_ids = tuple(variant_ids)
-#         attribute_value = self.env['product.product'].search([
-#             ('attribute_value_ids', 'in', value_ids),
-#             ('product_tmpl_id', '=', product_template_id),
-#         ])
-#         
-#         #_logger.debug("boop4")
-#         #_logger.debug(attribute_value)
-#         return attribute_value
