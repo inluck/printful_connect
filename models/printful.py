@@ -302,7 +302,7 @@ class PrintfulPrintful(models.Model):
             category_id = self._get_category_id(category_data['title'], product['thumbnail_url'])
             
             pt_obj.write({
-                'public_categ_ids': [(4, category_id)]
+                'public_categ_ids': [(4, category_id)],
                 'attribute_line_ids': [(4, line.id) for line in size_attribute_line_ids]
             })
                 
