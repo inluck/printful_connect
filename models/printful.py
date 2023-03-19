@@ -322,7 +322,7 @@ class PrintfulPrintful(models.Model):
 
     @sleep_and_retry
     @limits(calls=100, period=60)
-    def _make_api_request(url, headers):
+    def _make_api_request(self, url, headers):
         response = requests.get(url, headers=headers)
         if response.status_code == 429:
             raise requests.exceptions.RequestException('Rate limit exceeded')
