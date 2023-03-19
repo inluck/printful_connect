@@ -279,12 +279,13 @@ class PrintfulPrintful(models.Model):
                         'printful_currency':  variant['result']['currency'],
                         'printful_size':  variant_data['size'],
                         'printful_color':  variant_data['color'],
+                        'printful_product': pt_obj.id,
                         'printful_variant_ref': variant['result']['external_id'],
                         'printful_variant_external_ref': variant['result']['id'],
                         'printful_product_in_stock': variant_data['in_stock'],
                         'description_sale': variant_product_data['description'],
                         'website_published': variant_data['in_stock'],
-                        'website_description': ''
+#                         'website_description': ''
                         })
             pt_obj.write({
                 'attribute_line_ids': [(4, line.id) for line in size_attribute_line_ids]
