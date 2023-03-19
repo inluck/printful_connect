@@ -284,11 +284,11 @@ class PrintfulPrintful(models.Model):
                     category_id_prod = self._get_category_id(category_data['result']['category']['title'], category_data['result']['category']['image_url'])
                     category_ids.append(category_id_prod)
 
-                    if not product_public_category_id[0]:
-                        category_id_store = self._get_category_id(store_name, product['thumbnail_url'])
+                    try:
+                        category_id_store = self._get_category_id(product_public_category_id[0].name, product['thumbnail_url'])
                         category_ids.append(category_id_store)
-                    else:
-                        category_id_store = self._get_category_id(product_public_category_id[0].display_name, product['thumbnail_url'])
+                    except:
+                        category_id_store = self._get_category_id(store_name, product['thumbnail_url'])
                         category_ids.append(category_id_store)
                         
                     product_variant[0].write({
