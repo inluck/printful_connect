@@ -16,6 +16,7 @@ class PrintfulPrintful(models.Model):
     size_attribute_id = fields.Many2one(comodel_name="product.attribute", string="Size Attribute")
     color_attribute_id = fields.Many2one(comodel_name="product.attribute", string="Color Attribute")
     product_public_category_id = fields.Many2one(comodel_name="product.public.category", string="Public Category")
+    multiple_product_images = fields.Boolean(string="Multiple Product Images")
 
     def action_get_printful_order(self):
         so = self.env['sale.order'].search([])
@@ -81,14 +82,17 @@ class PrintfulPrintful(models.Model):
                 so.create(so_val)
     
     def action_get_printful_product(self):
-        headers = {'Authorization': 'Bearer ' + self.env['printful.printful'].search([], limit=1).token}
+        
+        token = self.env['printful.printful'].search([], limit=1).token
+        size_attribute = self.env['printful.printful'].search([], limit=1).size_attribute_id
+        color_attribute = self.env['printful.printful'].search([], limit=1).color_attribute_id
+        multiple_product_images = self.env['printful.printful'].search([], limit=1).multiple_product_images
+        
+        headers = {'Authorization': 'Bearer ' + token}
         url = "https://api.printful.com/store/products"
         response = self._make_api_request(url, headers)
         printful = response.json()
 
-        size_attribute = self.env['printful.printful'].search([], limit=1).size_attribute_id
-        color_attribute = self.env['printful.printful'].search([], limit=1).color_attribute_id
-        #_logger.debug(printful['result'])
         for product in printful['result']:
             img = response = self._make_api_request(product['thumbnail_url'], headers={})
             pt_obj = None
@@ -267,8 +271,10 @@ class PrintfulPrintful(models.Model):
                     for file in sync_variant['files']:
                         if file['type'] == 'preview':
                             img = self._make_api_request(file['preview_url'], headers={})
-#                             _logger.debug(file['preview_url'])
-#                             _logger.debug(variant['result']['name'])
+                        elif multiple_product_images == True:
+                            img = self._make_api_request(file['preview_url'], headers={})
+                            self._create_product_image(self, pt_obj, file['type'], base64.b64encode(img.content)):
+                            
                     product_variant[0].write({
                         'list_price': lowest_price,
                         'volume': variant_data['shipping_rate'],
@@ -317,6 +323,7 @@ class PrintfulPrintful(models.Model):
             return attribute_line[0]
             
         except:
+            // add create() for product.attribute.line
             return None
 
 
@@ -328,3 +335,16 @@ class PrintfulPrintful(models.Model):
             raise requests.exceptions.RequestException('Rate limit exceeded')
         response.raise_for_status()
         return response
+    
+    
+    def _create_product_image(self, name, image_data, product):
+        """
+        Create a new product image record and attach it to the provided product template.
+        """
+        product_image = self.env['product.image'].create({
+            'name': name,
+            'image': image_data,
+        })
+        product.write({
+            'product_template_image_ids': [(4, product_image.id)]
+        })
