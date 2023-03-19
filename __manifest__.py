@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 {
-    'name': "PrintFul",
-    'description': """
+    'name': "Printful Connect",
+    'description': "Odoo + Printful Integration"
     """,
 
-    'author': "Sajjad",
-    'website': "https://sajjad.hussain/",
-    'license': "LGPL-3",
+    'author': "Jon Mitchell",
+    'website': "https://easier.digital/",
+    'license': "MIT",
     'category': 'Production',
     'version': '16.0',
 
