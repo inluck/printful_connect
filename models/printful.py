@@ -360,7 +360,7 @@ class PrintfulPrintful(models.Model):
             Create new category
             """
             return self.env['product.public.category'].create({
-                'display_name': name,
+                'name': name,
                 'image_1920': base64.b64encode(img.content)
             }).id
 
