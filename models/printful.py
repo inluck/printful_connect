@@ -145,7 +145,7 @@ class PrintfulPrintful(models.Model):
 
             sync_pass = 0
             for sync_variant in sync_variants:
-                sync_pass = pass + 1
+                sync_pass = sync_pass + 1
           
 #                 variants_endpoint = f"https://api.printful.com/store/variants/@{sync_variant['external_id']}"
 #                 variants_response = requests.get(variants_endpoint, headers=headers)
