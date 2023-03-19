@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_account_form" model="ir.ui.view">
+        <field name="name">printful.printful.form</field>
+        <field name="model">printful.printful</field>
+        <field name="arch" type="xml">
+            <form string="Account">
+                <sheet>
+                    <header>
+                        <button name="action_get_printful_product"
+                                type="object" class="oe_highlight"  string="Fetch Printful Products" />
+                        <button name="action_get_printful_order"
+                                type="object" class="oe_highlight"  string="Fetch Printful Orders" />
+                    </header>
+                    <group>
+                        <group>
+                            <field name="store"/>
+                            <field name="name"/>
+			    <field name="color_attribute_id"/>
+			    <field name="size_attribute_id"/>
+                        </group>
+                        <field name="token" placeholder="Token"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_printful_list" model="ir.ui.view">
+        <field name="name">printful.printful.list</field>
+        <field name="model">printful.printful</field>
+        <field name="arch" type="xml">
+            <tree >
+                <field name="name"/>
+                <field name="store"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="action_printful_view" model="ir.actions.act_window">
+        <field name="name">printful Configuration</field>
+        <field name="res_model">printful.printful</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+    <menuitem action="action_printful_view"
+              id="action_printful_root"
+              parent="stock.menu_stock_config_settings"
+              sequence="20"
+    />
+
+</odoo>

@@ -1,0 +1,76 @@
+<odoo>
+
+    <record model="ir.ui.view" id="view_order_form">
+        <field name="name">sale.order.form.inherit</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="type">form</field>
+        <field name="arch" type="xml">
+            <xpath expr="//form/header//field[@name='state']"  position="before">
+                <button name="action_create_push_order_printful"
+                        type="object" class="oe_highlight"  string="Push Order on Printful" />
+            </xpath>
+            <xpath expr="//form/sheet/group[@name='sale_header']/group//field[@name='partner_id']"  position="after">
+                <field name="tax_number" />
+                <field name="company" />
+            </xpath>
+            <xpath expr="//notebook//page[@name='customer_signature']"  position="after">
+                <page string="PRINTFUL" >
+                    <group>
+                        <a><field name="printful_dashboard_url" readonly="1" widget="url"  /></a><br></br>
+                        <h1><field name="order_ref" readonly="1" string="Reference"/></h1>
+                        <group></group>
+                        <group>
+                            <field name="order_external_ref"/>
+                            <field name="order_store_ref"/>
+                            <field name="order_shipping"/>
+                            <field name="order_shipping_service_name"/>
+                            <field name="printful_order_notes"/>
+                            <field name="order_retail_delivery_fee"/>
+                            <field name="order_tax"/>
+                            <field name="order_total"/>
+                        </group>
+                        <group>
+                            <field name="order_currency"/>
+                            <field name="order_subtotal"/>
+                            <field name="order_discount"/>
+                            <field name="order_digitization"/>
+                            <field name="order_additional_fee"/>
+                            <field name="order_fulfillment_fee"/>
+                            <field name="shipping"/>
+                            <field name="order_vat"/>
+                            <field name="customer_pays"/>
+                            <field name="printful_price"/>
+                            <field name="profit"/>
+                            <field name="currency_symbol"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+            <xpath expr="//field[@name='order_line']/tree/field[@name='product_id']"  position="replace">
+                <field name="product_id" attrs="{'required': [('display_type', '=', False)],}" force_save="1"
+                       context="{'partner_id': parent.partner_id, 'quantity': product_uom_qty, 'pricelist': parent.pricelist_id, 'uom':product_uom, 'company_id': parent.company_id, 'default_lst_price': price_unit, 'default_description_sale': name}"
+                       domain="[('printful_product_in_stock', '=', True), ('sale_ok', '=', True), '|', ('company_id', '=', False), ('company_id', '=', parent.company_id)]" widget="sol_product_many2one"/>
+            </xpath>
+            <xpath expr="//field[@name='order_line']/tree/field[@name='product_template_id']" position="attributes">
+                <attribute name="invisible">1</attribute>
+            </xpath>
+        </field>
+    </record>
+
+
+    <record model="ir.ui.view" id="view_partner_form">
+        <field name="name">res.partner.form.inherit</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="type">form</field>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='vat']"  position="after">
+                <field name="tax_number" />
+            </xpath>
+        </field>
+    </record>
+
+</odoo>
+
+

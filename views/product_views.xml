@@ -1,0 +1,42 @@
+<odoo>
+
+    <record model="ir.ui.view" id="product_normal_form_view">
+        <field name="name">product.product.form.inherit</field>
+        <field name="model">product.product</field>
+        <field name="inherit_id" ref="product.product_normal_form_view"/>
+        <field name="type">form</field>
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='group_standard_price']"  position="after">
+                <group string="PRINTFUL">
+                    <field name="printful_variant_ref" />
+                    <field name="printful_variant_external_ref"  />
+<!--                     <field name="printful_product_id"  /> -->
+                    <field name="printful_product_in_stock" string="In Stock?"  />
+                    <field name="printful_sku"  string="SKU"/>
+                    <field name="printful_currency"  string="Currency"/>
+                    <field name="printful_size"  string="size"/>
+                    <field name="printful_color"  string="Color"/>
+                </group>
+            </xpath>
+            <xpath expr="/form/*" position="inside">
+                <header>
+                    <button name="action_set_printful_data"
+                            type="object" class="oe_highlight"  string="Update Product??" />
+
+                </header>
+            </xpath>
+        </field>
+    </record>
+    <record model="ir.ui.view" id="product_product_tree_view">
+        <field name="name">product.product.list.inherit</field>
+        <field name="model">product.product</field>
+        <field name="inherit_id" ref="product.product_product_tree_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <button name="action_set_printful_data"
+                        type="object" class="oe_highlight"  string="Update Product??" />
+            </xpath>
+        </field>
+    </record>
+
+</odoo>
