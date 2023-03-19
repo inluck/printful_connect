@@ -50,10 +50,4 @@
               parent="stock.menu_stock_config_settings"
               sequence="20"
     />
-
-    <menuitem action="action_printful_view"
-              id="action_printful_root"
-              parent="website.menu_stock_config_settings"
-              sequence="20"
-    />
 </odoo>
