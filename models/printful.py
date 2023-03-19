@@ -349,7 +349,7 @@ class PrintfulPrintful(models.Model):
 
     def _get_category_id(self, name, image_url):
         category = self.env['product.public.category'].search([
-            ('display_name', '=', name)
+            ('name', '=', name)
         ])
         img = self._make_api_request(image_url, headers={})
         try:
