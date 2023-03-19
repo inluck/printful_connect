@@ -27,7 +27,7 @@ class ProductProduct(models.Model):
     printful_color = fields.Char()
     printful_product_in_stock = fields.Boolean(default=True)
     printful_variant_id = fields.Char()
-    printful_product = fields.Many2one('printful.template')
+    printful_product = fields.Many2one(comodel_name='printful.template')
     printful_shipping = fields.Char(string='Estimated Delivery')
 
     def action_set_printful_data(self):
