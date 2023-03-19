@@ -345,7 +345,8 @@ class PrintfulPrintful(models.Model):
         """
         product_image = self.env['product.image'].create({
             'name': name,
-            'image': image_data,
+            'product_tmpl_id': product.id
+            'image_1024': image_data,
         })
         product.write({
             'product_template_image_ids': [(4, product_image.id)]
