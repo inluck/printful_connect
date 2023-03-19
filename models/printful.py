@@ -8,7 +8,7 @@ import logging
 _logger = logging.getLogger(__name__)
 class PrintfulPrintful(models.Model):
     _name = 'printful.printful'
-    _description = "Printful Printful"
+    _description = "Printful Configuration"
 
     store = fields.Char(string="PrintFul Store")
     token = fields.Char(string="PrintFul Token")
