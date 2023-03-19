@@ -266,8 +266,8 @@ class PrintfulPrintful(models.Model):
                     for file in sync_variant['files']:
                         if file['type'] == 'preview':
                             img = requests.get(file['preview_url'], headers={})
-                            _logger.debug(file['preview_url'])
-                            _logger.debug(variant['result']['name'])
+#                             _logger.debug(file['preview_url'])
+#                             _logger.debug(variant['result']['name'])
                     product_variant[0].write({
                         'list_price': lowest_price,
                         'volume': variant_data['shipping_rate'],
