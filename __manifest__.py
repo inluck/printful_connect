@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': "Printful Connect",
-    'description': "Odoo + Printful Integration"
-    """,
+    'description': "Odoo + Printful Integration",
 
     'author': "Jon Mitchell",
     'website': "https://easier.digital/",
