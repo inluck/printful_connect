@@ -266,9 +266,9 @@ class PrintfulPrintful(models.Model):
                     shipping_response = requests.post(shipping_endpoint, json=shipping_data, headers=headers)
                     shipping_data = json.loads(shipping_response.text)
                     for rate in shipping_data['result']:
-
                         if rate['id'] == "STANDARD":
                             variant_data['shipping_rate'] = rate['rate']
+                            variant_data['shipping_info'] = str(rate['minDeliveryDays']) + "-" + str(rate['maxDeliveryDays']) + " Business Days"
                     img = None
 
                     for file in sync_variant['files']:
@@ -309,7 +309,8 @@ class PrintfulPrintful(models.Model):
                         'printful_product_in_stock': variant_data['in_stock'],
                         'description_sale': variant_product_data['description'],
                         'website_published': variant_data['in_stock'],
-                        'public_categ_ids': [(4, line) for line in category_ids]
+                        'public_categ_ids': [(4, line) for line in category_ids],
+                        'printful_shipping': variant_data['shipping_info']
 #                         'website_description': ''
                         })
             
