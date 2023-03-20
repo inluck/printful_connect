@@ -83,10 +83,8 @@ class PrintfulPrintful(models.Model):
 
     def action_get_all_printful_products(self):
         
-        printfuls = self.env['printful.printful'].search([])
-        
-        for printful in printfuls:
-            action_get_printful_product(printful)
+        for rec in self:
+            action_get_printful_product(rec)
                 
     def action_get_printful_products(self):
         
