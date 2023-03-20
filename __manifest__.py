@@ -10,7 +10,7 @@
     'version': '16.0',
 
     # any module necessary for this one to work correctly
-    'depends': ['base', 'web', 'stock', 'product', 'sale'],
+    'depends': ['base', 'web', 'stock', 'product', 'sale', 'website', 'website_sale'],
 
     # always loaded
     'data': [
