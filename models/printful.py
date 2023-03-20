@@ -96,6 +96,7 @@ class PrintfulPrintful(models.Model):
         printful = response.json()
 
         for product in printful['result']:
+            shipping_info = None
             img = response = self._make_api_request(product['thumbnail_url'], headers={})
             pt_obj = None
             pt_exist = self.env['product.template'].search([
@@ -268,7 +269,7 @@ class PrintfulPrintful(models.Model):
                     for rate in shipping_data['result']:
                         if rate['id'] == "STANDARD":
                             variant_data['shipping_rate'] = rate['rate']
-                            variant_data['shipping_info'] = str(rate['minDeliveryDays']) + "-" + str(rate['maxDeliveryDays']) + " Business Days"
+                            shipping_info = str(rate['minDeliveryDays']) + "-" + str(rate['maxDeliveryDays']) + " Business Days"
                     img = None
 
                     for file in sync_variant['files']:
@@ -310,12 +311,13 @@ class PrintfulPrintful(models.Model):
                         'description_sale': variant_product_data['description'],
                         'website_published': variant_data['in_stock'],
                         'public_categ_ids': [(4, line) for line in category_ids],
-                        'printful_shipping': variant_data['shipping_info']
+#                         'printful_shipping': variant_data['shipping_info']
 #                         'website_description': ''
                         })
             
             pt_obj.write({
-                'attribute_line_ids': [(4, line.id) for line in size_attribute_line_ids]
+                'attribute_line_ids': [(4, line.id) for line in size_attribute_line_ids],
+                'printful_shipping': shipping_info
             })
                 
     def _get_attribute_value(self, attribute_id, value_name):
