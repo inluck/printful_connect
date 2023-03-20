@@ -34,20 +34,11 @@
         <field name="model">printful.printful</field>
         <field name="arch" type="xml">
             <tree >
+		<header>
+	           <button name="action_get_all_printful_products" type="object" class="oe_highlight" string="Update Products" />
+	        </header>
                 <field name="name"/>
             </tree>
-        </field>
-    </record>
-
-    <record model="ir.ui.view" id="view_printful_list_action">
-        <field name="name">printful.printful.list.action</field>
-        <field name="model">printful.printful</field>
-        <field name="inherit_id" ref="printful_connect.view_printful_list"/>
-        <field name="arch" type="xml">
-            <xpath expr="//header" position="inside">
-                <button name="action_get_all_printful_products"
-                        type="object" class="oe_highlight"  string="Update Products" />
-            </xpath>
         </field>
     </record>
 
