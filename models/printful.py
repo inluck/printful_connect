@@ -95,6 +95,9 @@ class PrintfulPrintful(models.Model):
         response = self._make_api_request(url, headers)
         printful = response.json()
 
+        for rec in self:
+            _logger.debug(rec.token)
+
         for product in printful['result']:
             shipping_info = None
             img = response = self._make_api_request(product['thumbnail_url'], headers={})
