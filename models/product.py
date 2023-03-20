@@ -9,6 +9,7 @@ class ProductTemplate(models.Model):
     printful_external_ref = fields.Char()
     printful_product_ref = fields.Char()
     printful_product_external_ref = fields.Char()
+    printful_shipping = fields.Char(string='Estimated Delivery')
 
 class ProductPublicCategory(models.Model):
     _inherit = 'product.public.category'
