@@ -39,6 +39,18 @@
         </field>
     </record>
 
+    <record model="ir.ui.view" id="view_printful_list_action">
+        <field name="name">printful.printful.list.action</field>
+        <field name="model">printful.printful</field>
+        <field name="inherit_id" ref="printful_connect.view_printful_list"/>
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <button name="action_get_all_printful_products"
+                        type="object" class="oe_highlight"  string="Update Products" />
+            </xpath>
+        </field>
+    </record>
+
     <record id="action_printful_view" model="ir.actions.act_window">
         <field name="name">printful Configuration</field>
         <field name="res_model">printful.printful</field>
