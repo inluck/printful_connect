@@ -80,23 +80,38 @@ class PrintfulPrintful(models.Model):
                     'order_line': lines,
                 }
                 so.create(so_val)
-    
-    def action_get_printful_product(self):
+
+    def action_get_all_printful_products(self):
         
-        token = self.env['printful.printful'].search([], limit=1).token
-        size_attribute = self.env['printful.printful'].search([], limit=1).size_attribute_id
-        color_attribute = self.env['printful.printful'].search([], limit=1).color_attribute_id
-        multiple_product_images = self.env['printful.printful'].search([], limit=1).multiple_product_images
-        store_name = self.env['printful.printful'].search([], limit=1).name
-        product_public_category_id = self.env['printful.printful'].search([], limit=1).product_public_category_id
+        printfuls = self.env['printful.printful'].search([])
+        
+        for printful in printfuls:
+            action_get_printful_product(printful)
+                
+    def action_get_printful_products(self):
+        
+        action_get_printful_product(self)
+        
+    def action_get_printful_product(self, printful):
+        
+#         token = self.env['printful.printful'].search([], limit=1).token
+#         size_attribute = self.env['printful.printful'].search([], limit=1).size_attribute_id
+#         color_attribute = self.env['printful.printful'].search([], limit=1).color_attribute_id
+#         multiple_product_images = self.env['printful.printful'].search([], limit=1).multiple_product_images
+#         store_name = self.env['printful.printful'].search([], limit=1).name
+#         product_public_category_id = self.env['printful.printful'].search([], limit=1).product_public_category_id
+        
+        token = printful.token
+        size_attribute = printful.size_attribute_id
+        color_attribute = printful.color_attribute_id
+        multiple_product_images = printful.multiple_product_images
+        store_name = printful.name
+        product_public_category_id = printful.product_public_category_id
             
         headers = {'Authorization': 'Bearer ' + token}
         url = "https://api.printful.com/store/products"
         response = self._make_api_request(url, headers)
         printful = response.json()
-
-        for rec in self:
-            _logger.debug(rec.token)
 
         for product in printful['result']:
             shipping_info = None
