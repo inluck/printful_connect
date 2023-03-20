@@ -21,7 +21,7 @@
                             <field name="color_attribute_id"/>
 			    <field name="size_attribute_id"/>
 			    <field name="product_public_category_id"/>
-<!-- 			    <field name="multiple_product_images"/> -->
+			    <field name="multiple_product_images"/>
                         </group>
                     </group>
                 </sheet>
