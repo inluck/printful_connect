@@ -84,11 +84,11 @@ class PrintfulPrintful(models.Model):
     def action_get_all_printful_products(self):
         
         for rec in self:
-            action_get_printful_product(rec)
+            self.action_get_printful_product(rec)
                 
     def action_get_printful_products(self):
         
-        action_get_printful_product(self)
+        self.action_get_printful_product(self)
         
     def action_get_printful_product(self, printful):
         
