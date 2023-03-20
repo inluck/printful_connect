@@ -7,7 +7,7 @@
             <form string="Account">
                 <sheet>
                     <header>
-                        <button name="action_get_printful_product"
+                        <button name="action_get_printful_products"
                                 type="object" class="oe_highlight"  string="Fetch Printful Products" />
                         <button name="action_get_printful_order"
                                 type="object" class="oe_highlight"  string="Fetch Printful Orders" />
