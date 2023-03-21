@@ -92,13 +92,6 @@ class PrintfulPrintful(models.Model):
         
     def action_get_printful_product(self, printful):
         
-#         token = self.env['printful.printful'].search([], limit=1).token
-#         size_attribute = self.env['printful.printful'].search([], limit=1).size_attribute_id
-#         color_attribute = self.env['printful.printful'].search([], limit=1).color_attribute_id
-#         multiple_product_images = self.env['printful.printful'].search([], limit=1).multiple_product_images
-#         store_name = self.env['printful.printful'].search([], limit=1).name
-#         product_public_category_id = self.env['printful.printful'].search([], limit=1).product_public_category_id
-        
         token = printful.token
         size_attribute = printful.size_attribute_id
         color_attribute = printful.color_attribute_id
@@ -165,14 +158,6 @@ class PrintfulPrintful(models.Model):
             sync_pass = 0
             for sync_variant in sync_variants:
                 sync_pass = sync_pass + 1
-          
-#                 variants_endpoint = f"https://api.printful.com/store/variants/@{sync_variant['external_id']}"
-#                 variants_response = requests.get(variants_endpoint, headers=headers)
-#                 variant = json.loads(variants_response.text)
-
-#                 if variant['code'] != 200:
-#                     _logger.error(f"Failed to retrieve Printful variants: {variant['result']}")
-#                     continue
                     
                 variant_data_endpoint = f"https://api.printful.com/products/variant/{sync_variant['variant_id']}"
                 variant_response = self._make_api_request(variant_data_endpoint, headers={})
@@ -183,8 +168,7 @@ class PrintfulPrintful(models.Model):
 
                 variant_data = json.loads(variant_response.text)['result']['variant']
                 variant_product_data = json.loads(variant_response.text)['result']['product']
-#                 #_logger.debug(variant_data)
-                #_logger.debug(variant_data.get('size'))
+
                 if not variant_data.get('size'):
                     _logger.warning(f"No size data found for variant ID {sync_variant['variant_id']}")
                 
@@ -305,8 +289,9 @@ class PrintfulPrintful(models.Model):
                         category_id_store = self._get_category_id(product_public_category_id[0].name, product['thumbnail_url'])
                         category_ids.append(category_id_store)
                     except:
-                        category_id_store = self._get_category_id(store_name, product['thumbnail_url'])
-                        category_ids.append(category_id_store)
+#                         category_id_store = self._get_category_id(store_name, product['thumbnail_url'])
+#                         category_ids.append(category_id_store)
+                        pass
                         
                     product_variant[0].write({
                         'list_price': lowest_price,
