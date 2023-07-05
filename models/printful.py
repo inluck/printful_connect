@@ -295,6 +295,7 @@ class PrintfulPrintful(models.Model):
                         
                     product_variant[0].write({
                         'list_price': lowest_price,
+                        'standard_price': lowest_price,
                         'volume': variant_data['shipping_rate'],
                         'default_code': sync_variant['sku'],
                         'printful_variant_ref': sync_variant['variant_id'],
