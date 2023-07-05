@@ -370,7 +370,7 @@ class PrintfulPrintful(models.Model):
             }).id
 
     @sleep_and_retry
-    @limits(calls=60, period=60)
+    @limits(calls=30, period=60)
     def _make_api_request(self, url, headers):
         response = requests.get(url, headers=headers)
         if response.status_code == 429:
