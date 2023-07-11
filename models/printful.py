@@ -295,7 +295,8 @@ class PrintfulPrintful(models.Model):
                         pass
 
 
-                    variant_data_obj = [ 'list_price': lowest_price,
+                    variant_data_obj = {
+                        'list_price': lowest_price,
                         'standard_price': float(lowest_price),
                         'volume': variant_data['shipping_rate'],
                         'default_code': sync_variant['sku'],
@@ -314,10 +315,10 @@ class PrintfulPrintful(models.Model):
                         'description_sale': variant_product_data['description'],
                         'website_published': variant_data['in_stock'],
                         'public_categ_ids': [(4, line) for line in category_ids],
-                    ]
+                    }
+                    
                     _logger.debug(variant_data_obj)
-                    product_variant[0].write({variant_data_obj
-                        })
+                    product_variant[0].write(variant_data_obj)
             
             pt_obj.write({
                 'attribute_line_ids': [(4, line.id) for line in size_attribute_line_ids],
