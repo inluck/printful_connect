@@ -303,7 +303,7 @@ class PrintfulPrintful(models.Model):
                         'printful_variant_ref': sync_variant['variant_id'],
                         'printful_variant_id': sync_variant['variant_id'],
                         'name': product['name'],
-                        'image_1920': base64.b64encode(img.content),
+                        # 'image_1920': base64.b64encode(img.content),
                         'printful_sku': sync_variant['sku'],
                         'printful_currency':  sync_variant['currency'],
                         'printful_size':  variant_data['size'],
@@ -318,8 +318,8 @@ class PrintfulPrintful(models.Model):
                     }
                     
                     _logger.debug(variant_data_obj)
-                    product_variant[0].write(variant_data_obj)
-            
+                    upsert_output = product_variant[0].write(variant_data_obj)
+                    _logger.debug(upsert_output)
             pt_obj.write({
                 'attribute_line_ids': [(4, line.id) for line in size_attribute_line_ids],
                 'printful_shipping': shipping_info
