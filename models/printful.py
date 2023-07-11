@@ -110,7 +110,8 @@ class PrintfulPrintful(models.Model):
             pt_obj = None
             pt_exist = self.env['product.template'].search([
                     ('printful_ref', '=', str(product['id']))])
-            #_logger.debug(pt_exist)
+            _logger.debug(pt_exist)
+            _logger.debug(product['name'])
             if not pt_exist:
                 pt_obj = self.env['product.template'].create({
                     'name': product['name'],
@@ -120,7 +121,7 @@ class PrintfulPrintful(models.Model):
                     'image_1920': base64.b64encode(img.content)
                 })
             else:
-                #_logger.debug("rewrite")
+                _logger.debug("rewrite")
                 pt_obj = pt_exist[0]
                 pt_obj.write({
                     'name': product['name'],
@@ -137,7 +138,7 @@ class PrintfulPrintful(models.Model):
                 _logger.error(f"Failed to retrieve Printful product details: {product_details['result']}")
                 continue
                 
-#             #_logger.debug(product_details)
+            _logger.debug(product_details)
 
             sync_variants = product_details['result']['sync_variants']
             if not sync_variants:
@@ -292,9 +293,9 @@ class PrintfulPrintful(models.Model):
 #                         category_id_store = self._get_category_id(store_name, product['thumbnail_url'])
 #                         category_ids.append(category_id_store)
                         pass
-                        
-                    product_variant[0].write({
-                        'list_price': lowest_price,
+
+
+                    variant_data_obj = [ 'list_price': lowest_price,
                         'standard_price': float(lowest_price),
                         'volume': variant_data['shipping_rate'],
                         'default_code': sync_variant['sku'],
@@ -313,8 +314,9 @@ class PrintfulPrintful(models.Model):
                         'description_sale': variant_product_data['description'],
                         'website_published': variant_data['in_stock'],
                         'public_categ_ids': [(4, line) for line in category_ids],
-#                         'printful_shipping': variant_data['shipping_info']
-#                         'website_description': ''
+                    ]
+                    _logger.debug(variant_data_obj)
+                    product_variant[0].write({variant_data_obj
                         })
             
             pt_obj.write({
