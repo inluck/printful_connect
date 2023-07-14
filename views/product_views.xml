@@ -9,6 +9,7 @@
             <xpath expr="//group[@name='group_standard_price']"  position="after">
                 <group string="PRINTFUL">
                     <field name="printful_product"  />
+                    <field name="printful_variant_id" />
                     <field name="printful_variant_ref" />
                     <field name="printful_variant_external_ref"  />
                     <field name="printful_product_in_stock" string="In Stock?"  />
