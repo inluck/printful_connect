@@ -128,9 +128,9 @@ class SaleOrder(models.Model):
                 rec.printful_price = printful['result']['pricing_breakdown'][0]['printful_price']
                 rec.profit = printful['result']['pricing_breakdown'][0]['profit']
                 rec.currency_symbol = printful['result']['pricing_breakdown'][0]['currency_symbol']
-                one = str(printful)
-                two = str(data)
-                raise UserError(str(one + two))
+                # one = str(printful)
+                # two = str(data)
+                # raise UserError(str(one + two))
 
 class ResPartner(models.Model):
     _inherit = 'res.partner'
