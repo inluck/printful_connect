@@ -8,7 +8,8 @@
         <field name="arch" type="xml">
             <xpath expr="//form/header//field[@name='state']"  position="before">
                 <button name="action_create_push_order_printful"
-                        type="object" class="oe_highlight"  string="Push Order on Printful" />
+                    type="object" class="oe_highlight"  string="Push Order on Printful"
+                    attrs="{'invisible': [('order_external_ref','!=',False)]}" />
             </xpath>
             <xpath expr="//form/sheet/group[@name='sale_header']/group//field[@name='partner_id']"  position="after">
                 <field name="tax_number" />
