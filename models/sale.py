@@ -132,6 +132,40 @@ class SaleOrder(models.Model):
                 # two = str(data)
                 # raise UserError(str(one + two))
 
+            #confirm order
+            confirmUrl = "https://api.printful.com/orders/" + printful['result']['id'] + "/confim"
+            response = requests.post(confirmUrl, headers=headers)
+            confirmPrintful = response.json()
+            if confirmPrintful['code'] != 200:
+                one = str(printful)
+                two = str(data)
+                raise UserError(str(one + two))
+            else:
+                rec.order_ref = str(printful['result']['id'])
+                rec.order_external_ref = printful['result']['external_id']
+                rec.order_store_ref = printful['result']['store']
+                rec.order_shipping = printful['result']['shipping']
+                rec.order_shipping_service_name = printful['result']['shipping_service_name']
+                rec.printful_order_notes = printful['result']['notes']
+                rec.order_currency = printful['result']['costs']['currency']
+                rec.order_subtotal = printful['result']['costs']['subtotal']
+                rec.order_discount = printful['result']['costs']['discount']
+                rec.shipping = printful['result']['costs']['shipping']
+                rec.order_digitization = printful['result']['costs']['digitization']
+                rec.order_additional_fee = printful['result']['costs']['additional_fee']
+                rec.order_fulfillment_fee = printful['result']['costs']['fulfillment_fee']
+                rec.order_retail_delivery_fee = printful['result']['costs']['retail_delivery_fee']
+                rec.order_tax = printful['result']['costs']['tax']
+                rec.order_total = printful['result']['costs']['total']
+                rec.printful_dashboard_url = printful['result']['dashboard_url']
+                rec.customer_pays = printful['result']['pricing_breakdown'][0]['customer_pays']
+                rec.printful_price = printful['result']['pricing_breakdown'][0]['printful_price']
+                rec.profit = printful['result']['pricing_breakdown'][0]['profit']
+                rec.currency_symbol = printful['result']['pricing_breakdown'][0]['currency_symbol']
+                # one = str(printful)
+                # two = str(data)
+                # raise UserError(str(one + two))
+
 class ResPartner(models.Model):
     _inherit = 'res.partner'
 
