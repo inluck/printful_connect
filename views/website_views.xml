@@ -1,0 +1,12 @@
+<odoo>
+    <template id="s_size_guide" name="Size Guide" inherit_id="website_sale.products">
+        <xpath expr="//div[@class='oe_website_sale']" position="inside">
+            <t t-foreach="products" t-as="product">
+                <div class="size-guide">
+                    <h3>Size Guide</h3>
+                    <p t-esc="product.size_guide"/>
+                </div>
+            </t>
+        </xpath>
+    </template>
+</odoo>
