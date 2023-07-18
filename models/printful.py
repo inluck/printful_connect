@@ -2,6 +2,7 @@
 import requests
 import base64
 import json
+from tabulate import tabulate
 from ratelimit import limits, sleep_and_retry
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError, AccessError
@@ -398,3 +399,40 @@ class PrintfulPrintful(models.Model):
                 'image_1920': base64.b64encode(img.content),
             })
         product.product_template_image_ids = [(4, product_image.id)]
+
+    def _get_size_guide(self, headers, image_url):
+        url = "https://api.printful.com/store/products"
+        response = self._make_api_request(url, headers)
+        data = response.json()
+        jsonData = json.loads(json_data)
+        product_info = jsonData['result']
+        
+        output_str = ""
+        
+        # Loop through size tables
+        for table in product_info['size_tables']:
+            output_str += f"\n{table['type'].replace('_', ' ').title()} Guide"
+            output_str += f"\nImage Link: {table['image_url']}\n"
+        
+            headers = ["Size"]
+            size_data = {size: [] for size in product_info['available_sizes']}
+        
+            # Loop through measurements in each table
+            for measurement in table['measurements']:
+                headers.append(measurement['type_label'])
+        
+                # Loop through sizes in each measurement
+                for size_info in measurement['values']:
+                    size = size_info['size']
+                    if 'min_value' in size_info and 'max_value' in size_info:
+                        size_data[size].append(f"{size_info['min_value']} - {size_info['max_value']}")
+                    else:
+                        size_data[size].append(size_info['value'])
+        
+            table_data = [size_data[size] for size in product_info['available_sizes']]
+            for i, size in enumerate(product_info['available_sizes']):
+                table_data[i].insert(0, size)
+        
+            output_str += tabulate(table_data, headers=headers, tablefmt='pipe')
+            output_str += "\n"
+            return output_str
