@@ -18,10 +18,9 @@
             <xpath expr="//notebook//page[@name='customer_signature']"  position="after">
                 <page string="PRINTFUL" >
                     <group>
-                        <a><field name="printful_dashboard_url" readonly="1" widget="url"  /></a><br></br>
-                        <h1><field name="order_ref" readonly="1" string="Reference"/></h1>
-                        <group></group>
                         <group>
+                            <a><field name="printful_dashboard_url" readonly="1" widget="url"  /></a><br></br>
+                            <field name="order_ref" string="Reference"/>
                             <field name="order_external_ref"/>
                             <field name="order_store_ref"/>
                             <field name="order_shipping"/>
