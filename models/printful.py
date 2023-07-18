@@ -120,7 +120,7 @@ class PrintfulPrintful(models.Model):
                     'default_code': str(product['external_id']),
                     'printful_ref': str(product['id']),
                     'printful_external_ref': str(product['external_id']),
-                    'printful_sizeguide': str(size_guide),
+                    'website_description': str(size_guide),
                     'image_1920': base64.b64encode(img.content)
                 })
             else:
