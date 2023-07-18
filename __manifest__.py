@@ -19,6 +19,7 @@
         'views/sale_views.xml',
         'views/printful_views.xml',
         'views/printful_product.xml',
+        'views/website_views.xml',
         'data/fetch_product_cron.xml',
     ],
 
