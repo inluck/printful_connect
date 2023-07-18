@@ -113,12 +113,14 @@ class PrintfulPrintful(models.Model):
                     ('printful_ref', '=', str(product['id']))])
             _logger.debug(pt_exist)
             _logger.debug(product['name'])
+            size_guide = self._get_size_guide(headers, product['id'])
             if not pt_exist:
                 pt_obj = self.env['product.template'].create({
                     'name': product['name'],
                     'default_code': str(product['external_id']),
                     'printful_ref': str(product['id']),
                     'printful_external_ref': str(product['external_id']),
+                    'printful_sizeguide': str(size_guide),
                     'image_1920': base64.b64encode(img.content)
                 })
             else:
@@ -400,26 +402,27 @@ class PrintfulPrintful(models.Model):
             })
         product.product_template_image_ids = [(4, product_image.id)]
 
-    def _get_size_guide(self, headers, image_url):
-        url = "https://api.printful.com/store/products"
+    def _get_size_guide(self, headers, product_id):
+        url = "https://api.printful.com/store/products/" + str(product_id) + "/sizes"
         response = self._make_api_request(url, headers)
         data = response.json()
-        jsonData = json.loads(json_data)
-        product_info = jsonData['result']
+        product_info = data['result']
         
         output_str = ""
         
         # Loop through size tables
         for table in product_info['size_tables']:
-            output_str += f"\n{table['type'].replace('_', ' ').title()} Guide"
-            output_str += f"\nImage Link: {table['image_url']}\n"
+            output_str += f"<h2>{table['type'].replace('_', ' ').title()} Guide</h2>\n"
+            output_str += f"<img src='{table['image_url']}' alt='Guide Image'>\n"
+            output_str += f"<div>{table['image_description']}</div>\n"
+            output_str += f"<div>{table['description']}</div>\n"
         
             headers = ["Size"]
             size_data = {size: [] for size in product_info['available_sizes']}
         
             # Loop through measurements in each table
             for measurement in table['measurements']:
-                headers.append(measurement['type_label'])
+                headers.append(f"{measurement['type_label']} ({table['unit']})")
         
                 # Loop through sizes in each measurement
                 for size_info in measurement['values']:
@@ -433,6 +436,7 @@ class PrintfulPrintful(models.Model):
             for i, size in enumerate(product_info['available_sizes']):
                 table_data[i].insert(0, size)
         
-            output_str += tabulate(table_data, headers=headers, tablefmt='pipe')
-            output_str += "\n"
-            return output_str
+            output_str += tabulate(table_data, headers=headers, tablefmt='html')
+            output_str += "<br>"
+
+        return output_str
