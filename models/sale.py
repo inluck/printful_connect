@@ -107,7 +107,7 @@ class SaleOrder(models.Model):
                 two = str(data)
                 raise UserError(str(one + two))
             else:
-                rec.order_ref = "#PF" + str(printful['result']['id'])
+                rec.order_ref = str(printful['result']['id'])
                 rec.order_external_ref = printful['result']['external_id']
                 rec.order_store_ref = printful['result']['store']
                 rec.order_shipping = printful['result']['shipping']
@@ -137,31 +137,30 @@ class SaleOrder(models.Model):
             response = requests.post(confirmUrl, headers=headers)
             confirmPrintful = response.json()
             if confirmPrintful['code'] != 200:
-                one = str(printful)
-                two = str(data)
-                raise UserError(str(one + two))
+                one = str(confirmPrintful)
+                raise UserError(str(one))
             else:
-                rec.order_ref = str(printful['result']['id'])
-                rec.order_external_ref = printful['result']['external_id']
-                rec.order_store_ref = printful['result']['store']
-                rec.order_shipping = printful['result']['shipping']
-                rec.order_shipping_service_name = printful['result']['shipping_service_name']
-                rec.printful_order_notes = printful['result']['notes']
-                rec.order_currency = printful['result']['costs']['currency']
-                rec.order_subtotal = printful['result']['costs']['subtotal']
-                rec.order_discount = printful['result']['costs']['discount']
-                rec.shipping = printful['result']['costs']['shipping']
-                rec.order_digitization = printful['result']['costs']['digitization']
-                rec.order_additional_fee = printful['result']['costs']['additional_fee']
-                rec.order_fulfillment_fee = printful['result']['costs']['fulfillment_fee']
-                rec.order_retail_delivery_fee = printful['result']['costs']['retail_delivery_fee']
-                rec.order_tax = printful['result']['costs']['tax']
-                rec.order_total = printful['result']['costs']['total']
-                rec.printful_dashboard_url = printful['result']['dashboard_url']
-                rec.customer_pays = printful['result']['pricing_breakdown'][0]['customer_pays']
-                rec.printful_price = printful['result']['pricing_breakdown'][0]['printful_price']
-                rec.profit = printful['result']['pricing_breakdown'][0]['profit']
-                rec.currency_symbol = printful['result']['pricing_breakdown'][0]['currency_symbol']
+                rec.order_ref = str(confirmPrintful['result']['id'])
+                rec.order_external_ref = confirmPrintful['result']['external_id']
+                rec.order_store_ref = confirmPrintful['result']['store']
+                rec.order_shipping = confirmPrintful['result']['shipping']
+                rec.order_shipping_service_name = confirmPrintful['result']['shipping_service_name']
+                rec.printful_order_notes = confirmPrintful['result']['notes']
+                rec.order_currency = confirmPrintful['result']['costs']['currency']
+                rec.order_subtotal = confirmPrintful['result']['costs']['subtotal']
+                rec.order_discount = confirmPrintful['result']['costs']['discount']
+                rec.shipping = confirmPrintful['result']['costs']['shipping']
+                rec.order_digitization = confirmPrintful['result']['costs']['digitization']
+                rec.order_additional_fee = confirmPrintful['result']['costs']['additional_fee']
+                rec.order_fulfillment_fee = confirmPrintful['result']['costs']['fulfillment_fee']
+                rec.order_retail_delivery_fee = confirmPrintful['result']['costs']['retail_delivery_fee']
+                rec.order_tax = confirmPrintful['result']['costs']['tax']
+                rec.order_total = confirmPrintful['result']['costs']['total']
+                rec.printful_dashboard_url = confirmPrintful['result']['dashboard_url']
+                rec.customer_pays = confirmPrintful['result']['pricing_breakdown'][0]['customer_pays']
+                rec.printful_price = confirmPrintful['result']['pricing_breakdown'][0]['printful_price']
+                rec.profit = confirmPrintful['result']['pricing_breakdown'][0]['profit']
+                rec.currency_symbol = confirmPrintful['result']['pricing_breakdown'][0]['currency_symbol']
                 # one = str(printful)
                 # two = str(data)
                 # raise UserError(str(one + two))
