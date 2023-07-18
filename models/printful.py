@@ -113,14 +113,12 @@ class PrintfulPrintful(models.Model):
                     ('printful_ref', '=', str(product['id']))])
             _logger.debug(pt_exist)
             _logger.debug(product['name'])
-            size_guide = self._get_size_guide(headers, product['id'])
             if not pt_exist:
                 pt_obj = self.env['product.template'].create({
                     'name': product['name'],
                     'default_code': str(product['external_id']),
                     'printful_ref': str(product['id']),
                     'printful_external_ref': str(product['external_id']),
-                    'website_description': str(size_guide),
                     'image_1920': base64.b64encode(img.content)
                 })
             else:
@@ -297,6 +295,10 @@ class PrintfulPrintful(models.Model):
 #                         category_ids.append(category_id_store)
                         pass
 
+                    try:
+                        size_guide = self._get_size_guide(headers, sync_variant['product']['product_id'])
+                    except:
+                        pass
 
                     variant_data_obj = {
                         'list_price': lowest_price,
@@ -318,6 +320,7 @@ class PrintfulPrintful(models.Model):
                         'description_sale': variant_product_data['description'],
                         'website_published': variant_data['in_stock'],
                         'public_categ_ids': [(4, line) for line in category_ids],
+                        'website_description': str(size_guide)
                     }
                     
                     _logger.debug(variant_data_obj)
