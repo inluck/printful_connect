@@ -294,7 +294,7 @@ class PrintfulPrintful(models.Model):
 #                         category_id_store = self._get_category_id(store_name, product['thumbnail_url'])
 #                         category_ids.append(category_id_store)
                         pass
-
+                    size_guide = ""
                     try:
                         size_guide = self._get_size_guide(headers, sync_variant['product']['product_id'])
                     except:
