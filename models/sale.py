@@ -4,7 +4,6 @@ from odoo.exceptions import UserError
 import requests
 import random
 import json
-import time 
 
 # import logging
 # _logger = logging.getLogger(__name__)
@@ -134,8 +133,7 @@ class SaleOrder(models.Model):
                 # raise UserError(str(one + two))
 
             #confirm order
-            time.sleep(5) 
-            confirmUrl = "https://api.printful.com/orders/@" + str(printful['result']['external_id']) + "/confim"
+            confirmUrl = "https://api.printful.com/orders/@" + str(printful['result']['external_id']) + "/confirm"
             response = requests.post(confirmUrl, headers=headers)
             confirmPrintful = response.json()
             if confirmPrintful['code'] != 200:
