@@ -138,7 +138,7 @@ class SaleOrder(models.Model):
             confirmPrintful = response.json()
             if confirmPrintful['code'] != 200:
                 one = str(confirmPrintful)
-                raise UserError(str(one))
+                raise UserError(str(one) + confirmUrl)
             else:
                 rec.order_ref = str(confirmPrintful['result']['id'])
                 rec.order_external_ref = confirmPrintful['result']['external_id']
