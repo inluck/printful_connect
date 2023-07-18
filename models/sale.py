@@ -133,7 +133,7 @@ class SaleOrder(models.Model):
                 # raise UserError(str(one + two))
 
             #confirm order
-            confirmUrl = "https://api.printful.com/orders/" + printful['result']['id'] + "/confim"
+            confirmUrl = "https://api.printful.com/orders/" + str(printful['result']['id']) + "/confim"
             response = requests.post(confirmUrl, headers=headers)
             confirmPrintful = response.json()
             if confirmPrintful['code'] != 200:
