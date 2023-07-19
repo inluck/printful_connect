@@ -320,7 +320,7 @@ class PrintfulPrintful(models.Model):
                         'description_sale': variant_product_data['description'],
                         'website_published': variant_data['in_stock'],
                         'public_categ_ids': [(4, line) for line in category_ids],
-                        'website_description': str(size_guide)
+                        'printful_sizeguide': str(size_guide)
                     }
                     
                     _logger.debug(variant_data_obj)
