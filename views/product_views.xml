@@ -17,9 +17,12 @@
                     <field name="printful_currency"  string="Currency"/>
                     <field name="printful_size"  string="size"/>
                     <field name="printful_color"  string="Color"/>
-                    <field name="website_description"  string="website description"/>
-
                 </group>
+                <group>
+                    <field name="website_description"  string="Website Description"/>
+                    <field name="printful_sizeguide"  string="Prtinful Size Guide"/>
+                </group>
+                
             </xpath>
             <xpath expr="/form/*" position="inside">
                 <header>
