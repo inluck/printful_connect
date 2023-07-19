@@ -2,9 +2,8 @@
     <template id="s_size_guide" name="Size Guide" inherit_id="website_sale.product" customize_show="True" >
         <xpath expr="//div[@id='product_full_description']" position="after">
             <div class="size-guide mt16">
-                <h3>Size Guide</h3>
                 <t t-if="product.printful_sizeguide">
-                    <p t-esc="product.printful_sizeguide"/>
+                    <p t-raw="product.printful_sizeguide"/>
                 </t>
             </div>
         </xpath>
