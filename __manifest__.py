@@ -17,6 +17,7 @@
         'security/ir.model.access.csv',
         'views/product_views.xml',
         'views/sale_views.xml',
+        'views/website_views.html',
         'views/printful_views.xml',
         'views/printful_product.xml',
         'data/fetch_product_cron.xml',
