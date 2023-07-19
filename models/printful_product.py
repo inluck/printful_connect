@@ -29,7 +29,7 @@ class ProductProduct(models.Model):
     printful_variant_id = fields.Char()
     printful_product = fields.Many2one(comodel_name='product.template')
     printful_shipping = fields.Char(string='Estimated Delivery')
-    printful_sizeguide = fields.Char(string='Size Guide')
+    printful_sizeguide = fields.HTML(string='Size Guide')
     
     def action_set_printful_data(self):
         for rec in self:
