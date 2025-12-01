@@ -118,6 +118,11 @@ class PrintfulPrintful(models.Model):
         """
         Sync a single product from Printful.
 
+        This method implements transaction safety:
+        - Uses savepoint for atomic product creation/update
+        - Tracks failed variants for reporting
+        - Raises on critical failures, continues on partial variant failures
+
         Args:
             printful_product_id: The Printful product ID to sync
             config: PrintfulPrintful config record (defaults to self)
@@ -125,6 +130,9 @@ class PrintfulPrintful(models.Model):
 
         Returns:
             product.template record
+
+        Raises:
+            UserError: If product fetch fails or all variants fail to sync
         """
         config = config or self
         headers = self._get_auth_headers(config)
@@ -145,15 +153,13 @@ class PrintfulPrintful(models.Model):
             _logger.warning("No sync variants found for product %s", printful_product_id)
             return None
 
-        # Create or update product template
-        product_template = self._upsert_product_template(sync_product, headers)
+        _logger.info("Syncing product %s (%s) with %d variants",
+                    sync_product.get('name'), printful_product_id, len(sync_variants))
 
-        # Calculate variant statistics for progress tracking
-        colors = set()
-        sizes = set()
-        for sv in sync_variants:
-            # We'll get actual size/color during variant processing
-            pass
+        # Use savepoint to ensure atomic product template creation
+        with self.env.cr.savepoint():
+            # Create or update product template
+            product_template = self._upsert_product_template(sync_product, headers)
 
         # Calculate lowest price for base price
         lowest_price = min(
@@ -165,47 +171,78 @@ class PrintfulPrintful(models.Model):
         size_attribute_line = None
         color_attribute_line = None
 
-        # Process each variant
+        # Track sync progress and failures
+        colors = set()
+        sizes = set()
         variants_synced = 0
+        failed_variants = []
+
+        # Process each variant
         for idx, sync_variant in enumerate(sync_variants):
+            variant_id = sync_variant.get('id', 'unknown')
             try:
-                variant_info = self._process_sync_variant(
-                    sync_variant,
-                    product_template,
-                    config,
-                    headers,
-                    lowest_price,
-                )
-
-                # Track colors and sizes for statistics
-                if variant_info.get('size'):
-                    sizes.add(variant_info['size'])
-                if variant_info.get('color'):
-                    colors.add(variant_info['color'])
-
-                # Update attribute lines reference
-                if variant_info.get('size_line'):
-                    size_attribute_line = variant_info['size_line']
-                if variant_info.get('color_line'):
-                    color_attribute_line = variant_info['color_line']
-
-                variants_synced += 1
-
-                # Report progress
-                if progress_callback:
-                    progress_callback(
-                        variants_synced,
-                        len(sync_variants),
-                        len(colors),
-                        len(sizes),
+                # Each variant sync in its own savepoint for isolation
+                with self.env.cr.savepoint():
+                    variant_info = self._process_sync_variant(
+                        sync_variant,
+                        product_template,
+                        config,
+                        headers,
+                        lowest_price,
                     )
 
-            except Exception as e:
-                _logger.warning("Failed to process variant %s: %s",
-                              sync_variant.get('id'), str(e))
-                continue
+                    # Track colors and sizes for statistics
+                    if variant_info.get('size'):
+                        sizes.add(variant_info['size'])
+                    if variant_info.get('color'):
+                        colors.add(variant_info['color'])
 
-        # Update product template with shipping info from last processed variant
+                    # Update attribute lines reference
+                    if variant_info.get('size_line'):
+                        size_attribute_line = variant_info['size_line']
+                    if variant_info.get('color_line'):
+                        color_attribute_line = variant_info['color_line']
+
+                    variants_synced += 1
+
+            except Exception as e:
+                _logger.warning("Failed to process variant %s: %s", variant_id, str(e))
+                failed_variants.append({
+                    'id': variant_id,
+                    'name': sync_variant.get('name', 'Unknown'),
+                    'error': str(e),
+                })
+                # Continue processing other variants
+
+            # Report progress (including failed ones in count)
+            if progress_callback:
+                progress_callback(
+                    variants_synced,
+                    len(sync_variants),
+                    len(colors),
+                    len(sizes),
+                )
+
+        # Check if sync was successful
+        if variants_synced == 0 and len(sync_variants) > 0:
+            error_details = '\n'.join([
+                f"  - {v['name']}: {v['error']}" for v in failed_variants[:5]
+            ])
+            raise UserError(_(
+                'Failed to sync any variants for product %s.\n\nErrors:\n%s'
+            ) % (sync_product.get('name'), error_details))
+
+        # Log partial failures
+        if failed_variants:
+            _logger.warning(
+                "Product %s synced with %d/%d variants. Failed variants: %s",
+                sync_product.get('name'),
+                variants_synced,
+                len(sync_variants),
+                [v['id'] for v in failed_variants]
+            )
+
+        # Update product template with attribute lines
         if size_attribute_line or color_attribute_line:
             attribute_lines = []
             if size_attribute_line:
@@ -216,6 +253,9 @@ class PrintfulPrintful(models.Model):
             product_template.write({
                 'attribute_line_ids': attribute_lines,
             })
+
+        _logger.info("Successfully synced product %s: %d/%d variants",
+                    sync_product.get('name'), variants_synced, len(sync_variants))
 
         return product_template
 

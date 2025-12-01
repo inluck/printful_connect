@@ -1,7 +1,14 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_printful_printful,printful.printful,model_printful_printful,,1,1,1,1
-access_product_product,product.product,model_product_product,,1,1,1,1
-access_product_template,product.template,model_product_template,,1,1,1,1
-access_product_public_category,product.public.category,model_product_public_category,,1,1,1,1
-access_printful_sync_queue,printful.sync.queue,model_printful_sync_queue,,1,1,1,1
-access_printful_sync_queue_item,printful.sync.queue.item,model_printful_sync_queue_item,,1,1,1,1
+# Printful Configuration - Only admins can access API tokens
+access_printful_config_admin,printful.printful admin,model_printful_printful,printful_connect.group_printful_admin,1,1,1,1
+access_printful_config_manager,printful.printful manager,model_printful_printful,printful_connect.group_printful_manager,1,0,0,0
+# Sync Queue - Managers can operate, users can view
+access_printful_sync_queue_manager,printful.sync.queue manager,model_printful_sync_queue,printful_connect.group_printful_manager,1,1,1,1
+access_printful_sync_queue_user,printful.sync.queue user,model_printful_sync_queue,printful_connect.group_printful_user,1,0,0,0
+# Sync Queue Items - Managers can operate, users can view
+access_printful_sync_queue_item_manager,printful.sync.queue.item manager,model_printful_sync_queue_item,printful_connect.group_printful_manager,1,1,1,1
+access_printful_sync_queue_item_user,printful.sync.queue.item user,model_printful_sync_queue_item,printful_connect.group_printful_user,1,0,0,0
+# Product models - Use stock groups (inherited by Printful groups)
+access_product_template_user,product.template user,model_product_template,stock.group_stock_user,1,1,1,0
+access_product_product_user,product.product user,model_product_product,stock.group_stock_user,1,1,1,0
+access_product_public_category_user,product.public.category user,model_product_public_category,stock.group_stock_user,1,1,1,0

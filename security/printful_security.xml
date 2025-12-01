@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+        <!-- Printful Module Category -->
+        <record id="module_category_printful" model="ir.module.category">
+            <field name="name">Printful</field>
+            <field name="description">Printful print-on-demand integration</field>
+            <field name="sequence">50</field>
+        </record>
+
+        <!-- Printful User Group - Can view sync queues and products -->
+        <record id="group_printful_user" model="res.groups">
+            <field name="name">User</field>
+            <field name="category_id" ref="module_category_printful"/>
+            <field name="implied_ids" eval="[(4, ref('stock.group_stock_user'))]"/>
+            <field name="comment">Can view Printful sync queues and synced products. Cannot modify configuration or API tokens.</field>
+        </record>
+
+        <!-- Printful Manager Group - Full access to sync operations -->
+        <record id="group_printful_manager" model="res.groups">
+            <field name="name">Manager</field>
+            <field name="category_id" ref="module_category_printful"/>
+            <field name="implied_ids" eval="[(4, ref('printful_connect.group_printful_user'))]"/>
+            <field name="comment">Can manage Printful sync queues, start syncs, push orders. Cannot modify API configuration.</field>
+        </record>
+
+        <!-- Printful Administrator Group - Full access including API token -->
+        <record id="group_printful_admin" model="res.groups">
+            <field name="name">Administrator</field>
+            <field name="category_id" ref="module_category_printful"/>
+            <field name="implied_ids" eval="[(4, ref('printful_connect.group_printful_manager'))]"/>
+            <field name="comment">Full access to Printful configuration including API tokens.</field>
+        </record>
+    </data>
+</odoo>

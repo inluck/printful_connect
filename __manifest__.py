@@ -31,6 +31,7 @@ Features:
     'depends': ['base', 'web', 'stock', 'product', 'sale', 'website', 'website_sale'],
 
     'data': [
+        'security/printful_security.xml',
         'security/ir.model.access.csv',
         'views/printful_sync_queue_views.xml',
         'views/product_views.xml',
