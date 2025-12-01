@@ -397,15 +397,25 @@ class PrintfulSyncQueueItem(models.Model):
             raise
 
     def _update_progress(self, variants_synced, variant_count, colors=0, sizes=0):
-        """Callback to update sync progress."""
+        """
+        Callback to update sync progress.
+
+        Note: Progress updates are committed at the end of the transaction.
+        For real-time UI updates, consider using websocket notifications
+        or implement this with a separate cursor:
+
+        with self.pool.cursor() as new_cr:
+            new_env = api.Environment(new_cr, self.env.uid, self.env.context)
+            item = new_env[self._name].browse(self.id)
+            item.write({...})
+            new_cr.commit()
+        """
         self.write({
             'variants_synced': variants_synced,
             'variant_count': variant_count,
             'color_count': colors,
             'size_count': sizes,
         })
-        # Commit progress to database so UI can see updates
-        self.env.cr.commit()
 
     def action_retry(self):
         """Retry syncing this product."""

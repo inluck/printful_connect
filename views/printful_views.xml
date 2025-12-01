@@ -36,6 +36,7 @@
                     <group>
                         <group string="API Configuration">
                             <field name="token" password="True" placeholder="Printful API Token"/>
+                            <field name="currency_id" options="{'no_create': True}"/>
                         </group>
                         <group string="Product Attributes">
                             <field name="size_attribute_id"/>
@@ -46,6 +47,9 @@
                         <group string="Defaults">
                             <field name="product_public_category_id"/>
                             <field name="multiple_product_images"/>
+                        </group>
+                        <group string="Shipping">
+                            <field name="default_shipping_country_id" options="{'no_create': True}"/>
                         </group>
                     </group>
                 </sheet>
