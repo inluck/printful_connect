@@ -16,7 +16,7 @@ class PrintfulPrintful(models.Model):
     _description = "Printful Configuration"
 
     name = fields.Char(string="Printful Store")
-    token = fields.Char(string="Printful Token")
+    token = fields.Char(string="Printful Token", password=True)
     size_attribute_id = fields.Many2one(
         comodel_name="product.attribute",
         string="Size Attribute",
@@ -137,6 +137,36 @@ class PrintfulPrintful(models.Model):
         config = config or self
         headers = self._get_auth_headers(config)
 
+        # Validate input
+        if not printful_product_id:
+            raise UserError(_('Product ID is required for synchronization'))
+
+        # Validate product ID format (should be numeric)
+        try:
+            int(printful_product_id)
+        except (ValueError, TypeError):
+            raise UserError(_(
+                'Invalid product ID format: %s. Product ID must be numeric.'
+            ) % printful_product_id)
+
+        # Validate configuration
+        if not config.size_attribute_id:
+            _logger.warning(
+                "Size attribute not configured for store '%s'. "
+                "Size variants will not be created.",
+                config.name
+            )
+        if not config.color_attribute_id:
+            _logger.warning(
+                "Color attribute not configured for store '%s'. "
+                "Color variants will not be created.",
+                config.name
+            )
+
+        # Initialize caches for this sync session to avoid redundant API calls
+        size_guide_cache = {}
+        category_cache = {}
+
         # Fetch product details
         product_url = f"https://api.printful.com/store/products/{printful_product_id}"
         product_response = self._make_api_request(product_url, headers)
@@ -189,6 +219,8 @@ class PrintfulPrintful(models.Model):
                         config,
                         headers,
                         lowest_price,
+                        size_guide_cache,
+                        category_cache,
                     )
 
                     # Track colors and sizes for statistics
@@ -302,9 +334,14 @@ class PrintfulPrintful(models.Model):
     # VARIANT PROCESSING
     # ==========================================
 
-    def _process_sync_variant(self, sync_variant, product_template, config, headers, lowest_price):
+    def _process_sync_variant(self, sync_variant, product_template, config, headers, lowest_price,
+                              size_guide_cache=None, category_cache=None):
         """
         Process a single sync variant from Printful.
+
+        Args:
+            size_guide_cache: Dict to cache size guides by product_id
+            category_cache: Dict to cache categories by category_id
 
         Returns dict with:
             - size: size value
@@ -312,6 +349,11 @@ class PrintfulPrintful(models.Model):
             - size_line: product.template.attribute.line for size
             - color_line: product.template.attribute.line for color
         """
+        # Initialize caches if not provided
+        if size_guide_cache is None:
+            size_guide_cache = {}
+        if category_cache is None:
+            category_cache = {}
         result = {
             'size': None,
             'color': None,
@@ -387,17 +429,20 @@ class PrintfulPrintful(models.Model):
             # Get shipping info
             shipping_info = self._get_shipping_info(sync_variant, headers)
 
-            # Get category
+            # Get category (with caching)
             category_ids = self._get_category_ids(
                 sync_variant,
                 config,
                 headers,
+                category_cache,
             )
 
-            # Get size guide
+            # Get size guide (with caching)
+            product_id = sync_variant.get('product', {}).get('product_id')
             size_guide = self._get_size_guide_safe(
                 headers,
-                sync_variant.get('product', {}).get('product_id'),
+                product_id,
+                size_guide_cache,
             )
 
             # Update variant
@@ -570,10 +615,10 @@ class PrintfulPrintful(models.Model):
                 "locale": "en_US"
             }
 
-            shipping_response = requests.post(
+            shipping_response = self._make_api_post_request(
                 "https://api.printful.com/shipping/rates",
-                json=shipping_data,
-                headers=headers,
+                headers,
+                shipping_data,
             )
             shipping_result = shipping_response.json()
 
@@ -588,28 +633,42 @@ class PrintfulPrintful(models.Model):
 
         return None
 
-    def _get_category_ids(self, sync_variant, config, headers):
-        """Get or create category IDs for the variant."""
+    def _get_category_ids(self, sync_variant, config, headers, category_cache=None):
+        """Get or create category IDs for the variant (with caching)."""
+        if category_cache is None:
+            category_cache = {}
+
         category_ids = []
 
-        # Get Printful category
+        # Get Printful category (use cache to avoid repeated API calls)
         main_category_id = sync_variant.get('main_category_id')
         if main_category_id:
-            try:
-                cat_url = f"https://api.printful.com/categories/{main_category_id}"
-                cat_response = self._make_api_request(cat_url, headers={})
-                cat_data = cat_response.json()
+            # Check cache first
+            if main_category_id in category_cache:
+                cat_id = category_cache[main_category_id]
+                if cat_id:
+                    category_ids.append(cat_id)
+            else:
+                # Fetch from API and cache result
+                try:
+                    cat_url = f"https://api.printful.com/categories/{main_category_id}"
+                    cat_response = self._make_api_request(cat_url, headers={})
+                    cat_data = cat_response.json()
 
-                if cat_data.get('code') == 200:
-                    cat_info = cat_data['result']['category']
-                    cat_id = self._get_or_create_category(
-                        cat_info.get('title'),
-                        cat_info.get('image_url'),
-                    )
-                    if cat_id:
-                        category_ids.append(cat_id)
-            except Exception as e:
-                _logger.warning("Failed to get Printful category: %s", str(e))
+                    if cat_data.get('code') == 200:
+                        cat_info = cat_data['result']['category']
+                        cat_id = self._get_or_create_category(
+                            cat_info.get('title'),
+                            cat_info.get('image_url'),
+                        )
+                        category_cache[main_category_id] = cat_id
+                        if cat_id:
+                            category_ids.append(cat_id)
+                    else:
+                        category_cache[main_category_id] = None
+                except Exception as e:
+                    _logger.warning("Failed to get Printful category: %s", str(e))
+                    category_cache[main_category_id] = None
 
         # Add store category if configured
         if config.product_public_category_id:
@@ -652,14 +711,26 @@ class PrintfulPrintful(models.Model):
     # SIZE GUIDE
     # ==========================================
 
-    def _get_size_guide_safe(self, headers, product_id):
-        """Safely get size guide HTML, returning empty string on error."""
+    def _get_size_guide_safe(self, headers, product_id, size_guide_cache=None):
+        """Safely get size guide HTML (with caching), returning empty string on error."""
         if not product_id:
             return ""
+
+        if size_guide_cache is None:
+            size_guide_cache = {}
+
+        # Check cache first
+        if product_id in size_guide_cache:
+            return size_guide_cache[product_id]
+
+        # Fetch and cache the size guide
         try:
-            return self._get_size_guide(headers, product_id)
+            size_guide = self._get_size_guide(headers, product_id)
+            size_guide_cache[product_id] = size_guide
+            return size_guide
         except Exception as e:
-            _logger.warning("Failed to get size guide: %s", str(e))
+            _logger.warning("Failed to get size guide for product %s: %s", product_id, str(e))
+            size_guide_cache[product_id] = ""
             return ""
 
     def _get_size_guide(self, headers, product_id):
@@ -841,8 +912,18 @@ class PrintfulPrintful(models.Model):
     @sleep_and_retry
     @limits(calls=30, period=60)
     def _make_api_request(self, url, headers):
-        """Make a rate-limited API request."""
+        """Make a rate-limited API GET request."""
         response = requests.get(url, headers=headers, timeout=30)
+        if response.status_code == 429:
+            raise requests.exceptions.RequestException('Rate limit exceeded')
+        response.raise_for_status()
+        return response
+
+    @sleep_and_retry
+    @limits(calls=30, period=60)
+    def _make_api_post_request(self, url, headers, data):
+        """Make a rate-limited API POST request."""
+        response = requests.post(url, headers=headers, json=data, timeout=30)
         if response.status_code == 429:
             raise requests.exceptions.RequestException('Rate limit exceeded')
         response.raise_for_status()

@@ -58,19 +58,90 @@ class SaleOrder(models.Model):
         for rec in self:
             rec._push_to_printful()
 
+    def _validate_order_for_printful(self):
+        """
+        Validate that the order has all required fields for Printful.
+
+        Raises:
+            UserError: If validation fails with detailed error message
+        """
+        self.ensure_one()
+        errors = []
+
+        # Validate partner information
+        partner = self.partner_id
+        if not partner:
+            errors.append("• Customer is required")
+        else:
+            if not partner.name:
+                errors.append("• Customer name is required")
+            if not partner.email:
+                errors.append("• Customer email is required")
+            if not partner.street:
+                errors.append("• Customer street address is required")
+            if not partner.city:
+                errors.append("• Customer city is required")
+            if not partner.country_id:
+                errors.append("• Customer country is required")
+            if not partner.zip:
+                errors.append("• Customer ZIP/postal code is required")
+
+        # Validate order lines
+        printful_items = []
+        for line in self.order_line:
+            # Skip delivery/shipping lines
+            is_shipping_line = (
+                line.product_id.is_delivery_product if line.product_id else False
+            ) or (
+                line.product_id.type == 'service' and
+                any(keyword in (line.name or '').lower()
+                    for keyword in ['delivery', 'shipping'])
+            )
+
+            if line.product_id and not is_shipping_line:
+                if line.product_id.printful_variant_ref:
+                    printful_items.append(line)
+                elif line.product_id.sale_ok:
+                    # Product exists but isn't a Printful product
+                    _logger.warning(
+                        "Order %s contains non-Printful product: %s",
+                        self.name, line.product_id.name
+                    )
+
+        if not printful_items:
+            errors.append("• Order must contain at least one Printful product")
+
+        # Validate each Printful item has required fields
+        for line in printful_items:
+            product = line.product_id
+            if not product.printful_variant_id:
+                errors.append(f"• Product '{product.name}' is missing Printful variant ID")
+            if not product.printful_sku:
+                errors.append(f"• Product '{product.name}' is missing Printful SKU")
+
+        # Raise all errors together
+        if errors:
+            raise UserError(_(
+                'Cannot push order to Printful. Please fix the following issues:\n\n%s'
+            ) % '\n'.join(errors))
+
     def _push_to_printful(self):
         """
         Push order to Printful for fulfillment.
 
         This method implements transaction safety:
+        - Validates order data before pushing
         - Idempotency check prevents duplicate pushes
         - Savepoint ensures atomic database updates
         - Proper error handling with detailed logging
 
         Raises:
-            UserError: If order already pushed, API config missing, or API call fails
+            UserError: If validation fails, order already pushed, API config missing, or API call fails
         """
         self.ensure_one()
+
+        # Validate order data first
+        self._validate_order_for_printful()
 
         # Idempotency check - prevent duplicate pushes
         if self.order_external_ref:
@@ -212,7 +283,16 @@ class SaleOrder(models.Model):
         for line in self.order_line:
             price_subtotal_grand += line.price_subtotal
 
-            if "Delivery" in (line.name or ''):
+            # Identify shipping/delivery products by field or product type
+            is_shipping_line = (
+                line.product_id.is_delivery_product if line.product_id else False
+            ) or (
+                line.product_id.type == 'service' and
+                any(keyword in (line.name or '').lower()
+                    for keyword in ['delivery', 'shipping'])
+            )
+
+            if is_shipping_line:
                 shipping_cost = line.price_subtotal
                 continue
 
