@@ -1,29 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-	<data noupdate="1">
-		<record id="auto_create_product_cron" model="ir.cron">
-			<field name="name">PRINTFUL: Product Auto Fetch</field>
-			<field name="model_id" ref="model_printful_printful"/>
-			<field name="state">code</field>
-			<field name="code">model.action_get_printful_product()</field>
-			<field name="interval_number">1</field>
-			<field name="interval_type">hours</field>
-			<field name="numbercall">-1</field>
-			<field eval="False" name="doall" />
-			<field name="priority">1000</field>
-		</record>
+    <data noupdate="1">
+        <!-- Process sync queue items in batches -->
+        <record id="cron_process_sync_queue" model="ir.cron">
+            <field name="name">Printful: Process Sync Queue</field>
+            <field name="model_id" ref="model_printful_sync_queue"/>
+            <field name="state">code</field>
+            <field name="code">
+# Process running queues in batches
+running_queues = model.search([('state', '=', 'running')])
+for queue in running_queues:
+    queue.action_process_next_batch(batch_size=5)
+            </field>
+            <field name="interval_number">2</field>
+            <field name="interval_type">minutes</field>
+            <field name="numbercall">-1</field>
+            <field name="doall" eval="False"/>
+            <field name="priority">100</field>
+            <field name="active" eval="True"/>
+        </record>
 
-<!-- 		<record id="auto_update_product_cron" model="ir.cron">
-			<field name="name">PRINTFUL: Product Auto Update</field>
-			<field name="model_id" ref="model_product_product"/>
-			<field name="state">code</field>
-			<field name="code">model.action_set_printful_data()</field>
-			<field name="interval_number">1</field>
-			<field name="interval_type">days</field>
-			<field name="numbercall">-1</field>
-			<field eval="False" name="doall" />
-			<field name="priority">1001</field>
-		</record> -->
-
-	</data>
+        <!-- Legacy: Full product sync (runs hourly, disabled by default) -->
+        <record id="auto_create_product_cron" model="ir.cron">
+            <field name="name">Printful: Legacy Full Sync (Hourly)</field>
+            <field name="model_id" ref="model_printful_printful"/>
+            <field name="state">code</field>
+            <field name="code">
+# Legacy sync - processes all products synchronously
+# Consider using the queue system instead for large catalogs
+for config in model.search([]):
+    config.action_get_printful_products()
+            </field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">hours</field>
+            <field name="numbercall">-1</field>
+            <field name="doall" eval="False"/>
+            <field name="priority">1000</field>
+            <field name="active" eval="False"/>
+        </record>
+    </data>
 </odoo>

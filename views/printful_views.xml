@@ -1,27 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <record id="view_account_form" model="ir.ui.view">
+    <record id="view_printful_form" model="ir.ui.view">
         <field name="name">printful.printful.form</field>
         <field name="model">printful.printful</field>
         <field name="arch" type="xml">
-            <form string="Account">
+            <form string="Printful Store">
+                <header>
+                    <button name="action_create_sync_queue"
+                            type="object"
+                            class="btn-primary"
+                            string="Create Sync Queue"
+                            icon="fa-plus"/>
+                    <button name="action_get_printful_products"
+                            type="object"
+                            class="btn-secondary"
+                            string="Quick Sync (Legacy)"/>
+                    <button name="action_get_printful_order"
+                            type="object"
+                            class="btn-secondary"
+                            string="Fetch Orders"/>
+                </header>
                 <sheet>
-                    <header>
-                        <button name="action_get_printful_products"
-                                type="object" class="oe_highlight"  string="Fetch Printful Products" />
-                        <button name="action_get_printful_order"
-                                type="object" class="oe_highlight"  string="Fetch Printful Orders" />
-                    </header>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="%(printful_sync_queue_action)d"
+                                type="action"
+                                class="oe_stat_button"
+                                icon="fa-refresh"
+                                context="{'search_default_printful_config_id': active_id}">
+                            <field name="sync_queue_ids" widget="statinfo" string="Sync Queues"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Store Name"/></h1>
+                    </div>
                     <group>
-                        <group>
-                            <field name="name"/>
-                            <field name="token" placeholder="Token"/>
+                        <group string="API Configuration">
+                            <field name="token" password="True" placeholder="Printful API Token"/>
                         </group>
-                        <group>
+                        <group string="Product Attributes">
+                            <field name="size_attribute_id"/>
                             <field name="color_attribute_id"/>
-			    <field name="size_attribute_id"/>
-			    <field name="product_public_category_id"/>
-			    <field name="multiple_product_images"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Defaults">
+                            <field name="product_public_category_id"/>
+                            <field name="multiple_product_images"/>
                         </group>
                     </group>
                 </sheet>
@@ -30,27 +54,47 @@
     </record>
 
     <record id="view_printful_list" model="ir.ui.view">
-        <field name="name">printful.printful.list</field>
+        <field name="name">printful.printful.tree</field>
         <field name="model">printful.printful</field>
         <field name="arch" type="xml">
-            <tree >
-		<header>
-	           <button name="action_get_all_printful_products" type="object" class="oe_highlight" string="Update Products" />
-	        </header>
+            <tree>
+                <header>
+                    <button name="action_get_all_printful_products"
+                            type="object"
+                            class="btn-secondary"
+                            string="Quick Sync All (Legacy)"/>
+                </header>
                 <field name="name"/>
+                <field name="size_attribute_id"/>
+                <field name="color_attribute_id"/>
+                <button name="action_create_sync_queue"
+                        type="object"
+                        string="Create Queue"
+                        icon="fa-plus"
+                        class="btn-link"/>
             </tree>
         </field>
     </record>
 
     <record id="action_printful_view" model="ir.actions.act_window">
-        <field name="name">printful Configuration</field>
+        <field name="name">Printful Stores</field>
         <field name="res_model">printful.printful</field>
         <field name="view_mode">tree,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Configure your first Printful store
+            </p>
+            <p>
+                Add your Printful API token to start syncing products.
+                Use the queue system for better visibility and control over large syncs.
+            </p>
+        </field>
     </record>
 
+    <!-- Keep legacy menu item for backward compatibility -->
     <menuitem action="action_printful_view"
               id="action_printful_root"
               parent="stock.menu_stock_config_settings"
               sequence="20"
-    />
+              name="Printful Stores"/>
 </odoo>

@@ -1,76 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
 <odoo>
-
+    <!-- Sale Order Form Extension -->
     <record model="ir.ui.view" id="view_order_form">
-        <field name="name">sale.order.form.inherit</field>
+        <field name="name">sale.order.form.inherit.printful</field>
         <field name="model">sale.order</field>
         <field name="inherit_id" ref="sale.view_order_form"/>
-        <field name="type">form</field>
         <field name="arch" type="xml">
-            <xpath expr="//form/header//field[@name='state']"  position="before">
+            <!-- Add Push to Printful button -->
+            <xpath expr="//form/header//field[@name='state']" position="before">
                 <button name="action_create_push_order_printful"
-                    type="object" class="oe_highlight"  string="Push Order on Printful"
-                    attrs="{'invisible': [('order_external_ref','!=',False)]}" />
+                        type="object"
+                        class="btn-primary"
+                        string="Push Order to Printful"
+                        invisible="order_external_ref"/>
             </xpath>
-            <xpath expr="//form/sheet/group[@name='sale_header']/group//field[@name='partner_id']"  position="after">
-                <field name="tax_number" />
-                <field name="company" />
+
+            <!-- Add tax/company fields after partner -->
+            <xpath expr="//form/sheet/group[@name='sale_header']/group//field[@name='partner_id']" position="after">
+                <field name="tax_number" readonly="1"/>
+                <field name="company" readonly="1"/>
             </xpath>
-            <xpath expr="//notebook//page[@name='customer_signature']"  position="after">
-                <page string="PRINTFUL" >
+
+            <!-- Add Printful tab -->
+            <xpath expr="//notebook//page[@name='customer_signature']" position="after">
+                <page string="Printful" name="printful_tab">
                     <group>
-                        <group>
-                            <a><field name="printful_dashboard_url" readonly="1" widget="url"  /></a><br></br>
-                            <field name="order_ref" string="Reference"/>
-                            <field name="order_external_ref"/>
-                            <field name="order_store_ref"/>
-                            <field name="order_shipping"/>
-                            <field name="order_shipping_service_name"/>
-                            <field name="printful_order_notes"/>
-                            <field name="order_retail_delivery_fee"/>
-                            <field name="order_tax"/>
-                            <field name="order_total"/>
+                        <group string="Order Info">
+                            <field name="printful_dashboard_url" widget="url" readonly="1"/>
+                            <field name="order_ref" string="Printful ID" readonly="1"/>
+                            <field name="order_external_ref" readonly="1"/>
+                            <field name="order_store_ref" readonly="1"/>
+                            <field name="order_shipping" readonly="1"/>
+                            <field name="order_shipping_service_name" readonly="1"/>
+                            <field name="printful_order_notes" readonly="1"/>
                         </group>
-                        <group>
-                            <field name="order_currency"/>
-                            <field name="order_subtotal"/>
-                            <field name="order_discount"/>
-                            <field name="order_digitization"/>
-                            <field name="order_additional_fee"/>
-                            <field name="order_fulfillment_fee"/>
-                            <field name="shipping"/>
-                            <field name="order_vat"/>
-                            <field name="customer_pays"/>
-                            <field name="printful_price"/>
-                            <field name="profit"/>
-                            <field name="currency_symbol"/>
+                        <group string="Costs Breakdown">
+                            <field name="order_currency" readonly="1"/>
+                            <field name="order_subtotal" readonly="1"/>
+                            <field name="order_discount" readonly="1"/>
+                            <field name="shipping" readonly="1"/>
+                            <field name="order_digitization" readonly="1"/>
+                            <field name="order_additional_fee" readonly="1"/>
+                            <field name="order_fulfillment_fee" readonly="1"/>
+                            <field name="order_retail_delivery_fee" readonly="1"/>
+                            <field name="order_tax" readonly="1"/>
+                            <field name="order_vat" readonly="1"/>
+                            <field name="order_total" readonly="1"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Profit Breakdown">
+                            <field name="customer_pays" readonly="1"/>
+                            <field name="printful_price" readonly="1"/>
+                            <field name="profit" readonly="1"/>
+                            <field name="currency_symbol" readonly="1"/>
                         </group>
                     </group>
                 </page>
             </xpath>
-            <xpath expr="//field[@name='order_line']/tree/field[@name='product_id']"  position="replace">
-                <field name="product_id" attrs="{'required': [('display_type', '=', False)],}" force_save="1"
-                       context="{'partner_id': parent.partner_id, 'quantity': product_uom_qty, 'pricelist': parent.pricelist_id, 'uom':product_uom, 'company_id': parent.company_id, 'default_lst_price': price_unit, 'default_description_sale': name}"
-                       domain="[('printful_product_in_stock', '=', True), ('sale_ok', '=', True), '|', ('company_id', '=', False), ('company_id', '=', parent.company_id)]" widget="sol_product_many2one"/>
-            </xpath>
-            <xpath expr="//field[@name='order_line']/tree/field[@name='product_template_id']" position="attributes">
-                <attribute name="invisible">1</attribute>
+
+            <!-- Filter order line products to Printful in-stock items -->
+            <xpath expr="//field[@name='order_line']/tree/field[@name='product_id']" position="attributes">
+                <attribute name="domain">[('printful_product_in_stock', '=', True), ('sale_ok', '=', True), '|', ('company_id', '=', False), ('company_id', '=', parent.company_id)]</attribute>
             </xpath>
         </field>
     </record>
 
-
+    <!-- Partner Form Extension -->
     <record model="ir.ui.view" id="view_partner_form">
-        <field name="name">res.partner.form.inherit</field>
+        <field name="name">res.partner.form.inherit.printful</field>
         <field name="model">res.partner</field>
         <field name="inherit_id" ref="base.view_partner_form"/>
-        <field name="type">form</field>
         <field name="arch" type="xml">
-            <xpath expr="//field[@name='vat']"  position="after">
-                <field name="tax_number" />
+            <xpath expr="//field[@name='vat']" position="after">
+                <field name="tax_number"/>
             </xpath>
         </field>
     </record>
-
 </odoo>
-
-

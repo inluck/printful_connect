@@ -1,48 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
 <odoo>
-
+    <!-- Product Variant Form Extension -->
     <record model="ir.ui.view" id="product_normal_form_view">
-        <field name="name">product.product.form.inherit</field>
+        <field name="name">product.product.form.inherit.printful</field>
         <field name="model">product.product</field>
         <field name="inherit_id" ref="product.product_normal_form_view"/>
-        <field name="type">form</field>
         <field name="arch" type="xml">
-            <xpath expr="//group[@name='group_standard_price']"  position="after">
-                <group string="PRINTFUL">
-                    <field name="printful_product"  />
-                    <field name="printful_variant_id" />
-                    <field name="printful_variant_ref" />
-                    <field name="printful_variant_external_ref"  />
-                    <field name="printful_product_in_stock" string="In Stock?"  />
-                    <field name="printful_sku"  string="SKU"/>
-                    <field name="printful_currency"  string="Currency"/>
-                    <field name="printful_size"  string="size"/>
-                    <field name="printful_color"  string="Color"/>
+            <xpath expr="//group[@name='group_standard_price']" position="after">
+                <group string="Printful Info" name="printful_info">
+                    <group>
+                        <field name="printful_product"/>
+                        <field name="printful_variant_id" readonly="1"/>
+                        <field name="printful_variant_ref" readonly="1"/>
+                        <field name="printful_variant_external_ref" readonly="1"/>
+                        <field name="printful_product_in_stock"/>
+                    </group>
+                    <group>
+                        <field name="printful_sku" readonly="1"/>
+                        <field name="printful_currency" readonly="1"/>
+                        <field name="printful_size" readonly="1"/>
+                        <field name="printful_color" readonly="1"/>
+                        <field name="printful_shipping" readonly="1"/>
+                    </group>
                 </group>
-                <group>
-                    <field name="website_description"  string="Website Description"/>
-                    <field name="printful_sizeguide"  string="Prtinful Size Guide"/>
+                <group string="Size Guide" name="printful_sizeguide">
+                    <field name="printful_sizeguide" nolabel="1" readonly="1"/>
                 </group>
-                
-            </xpath>
-            <xpath expr="/form/*" position="inside">
-                <header>
-                    <button name="action_set_printful_data"
-                            type="object" class="oe_highlight"  string="Update Product??" />
-
-                </header>
-            </xpath>
-        </field>
-    </record>
-    <record model="ir.ui.view" id="product_product_tree_view">
-        <field name="name">product.product.list.inherit</field>
-        <field name="model">product.product</field>
-        <field name="inherit_id" ref="product.product_product_tree_view"/>
-        <field name="arch" type="xml">
-            <xpath expr="//header" position="inside">
-                <button name="action_set_printful_data"
-                        type="object" class="oe_highlight"  string="Update Product??" />
             </xpath>
         </field>
     </record>
 
+    <!-- Product Template Form Extension -->
+    <record model="ir.ui.view" id="product_template_form_view">
+        <field name="name">product.template.form.inherit.printful</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_only_form_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='group_standard_price']" position="after">
+                <group string="Printful Info" name="printful_info">
+                    <field name="printful_ref" readonly="1"/>
+                    <field name="printful_external_ref" readonly="1"/>
+                    <field name="printful_shipping" readonly="1"/>
+                </group>
+                <group string="Size Guide" name="printful_sizeguide"
+                       invisible="not printful_sizeguide">
+                    <field name="printful_sizeguide" nolabel="1" readonly="1"/>
+                </group>
+            </xpath>
+        </field>
+    </record>
 </odoo>

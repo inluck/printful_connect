@@ -3,3 +3,5 @@ access_printful_printful,printful.printful,model_printful_printful,,1,1,1,1
 access_product_product,product.product,model_product_product,,1,1,1,1
 access_product_template,product.template,model_product_template,,1,1,1,1
 access_product_public_category,product.public.category,model_product_public_category,,1,1,1,1
+access_printful_sync_queue,printful.sync.queue,model_printful_sync_queue,,1,1,1,1
+access_printful_sync_queue_item,printful.sync.queue.item,model_printful_sync_queue_item,,1,1,1,1
