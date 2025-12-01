@@ -4,8 +4,13 @@ from odoo.exceptions import UserError
 import requests
 import json
 import logging
+import uuid
 
 _logger = logging.getLogger(__name__)
+
+# API configuration
+PRINTFUL_API_BASE = "https://api.printful.com"
+PRINTFUL_API_TIMEOUT = 30  # seconds
 
 
 class SaleOrder(models.Model):
@@ -54,10 +59,27 @@ class SaleOrder(models.Model):
             rec._push_to_printful()
 
     def _push_to_printful(self):
-        """Internal method to push order to Printful."""
+        """
+        Push order to Printful for fulfillment.
+
+        This method implements transaction safety:
+        - Idempotency check prevents duplicate pushes
+        - Savepoint ensures atomic database updates
+        - Proper error handling with detailed logging
+
+        Raises:
+            UserError: If order already pushed, API config missing, or API call fails
+        """
         self.ensure_one()
 
-        # Get API token
+        # Idempotency check - prevent duplicate pushes
+        if self.order_external_ref:
+            raise UserError(_(
+                'This order has already been pushed to Printful (External Ref: %s). '
+                'To push again, please clear the External Ref field first.'
+            ) % self.order_external_ref)
+
+        # Get API configuration
         printful_config = self.env['printful.printful'].search([], limit=1)
         if not printful_config or not printful_config.token:
             raise UserError(_('Please configure a Printful API token.'))
@@ -69,30 +91,110 @@ class SaleOrder(models.Model):
 
         # Build order data
         order_data = self._build_printful_order_data()
+        external_id = order_data['external_id']
 
-        # Create order
-        url = "https://api.printful.com/orders"
-        response = requests.post(url, headers=headers, data=json.dumps(order_data))
+        _logger.info("Pushing order %s to Printful with external_id %s", self.name, external_id)
+
+        try:
+            # Use savepoint for atomic operation
+            with self.env.cr.savepoint():
+                # Step 1: Create order in Printful
+                create_result = self._create_printful_order(order_data, headers)
+
+                # Update order with creation response (within savepoint)
+                self._update_from_printful_response(create_result)
+                _logger.info("Order %s created in Printful with ID %s",
+                           self.name, create_result['result'].get('id'))
+
+                # Step 2: Confirm the order
+                confirm_result = self._confirm_printful_order(create_result, headers)
+
+                # Update with confirmation response
+                self._update_from_printful_response(confirm_result)
+                _logger.info("Order %s confirmed in Printful", self.name)
+
+        except requests.exceptions.Timeout:
+            _logger.error("Timeout while pushing order %s to Printful", self.name)
+            raise UserError(_(
+                'Request to Printful timed out. Please check your network connection '
+                'and try again. If the problem persists, check Printful dashboard for '
+                'partial orders with external ID: %s'
+            ) % external_id)
+
+        except requests.exceptions.RequestException as e:
+            _logger.exception("Network error while pushing order %s to Printful", self.name)
+            raise UserError(_(
+                'Network error communicating with Printful: %s\n\n'
+                'Please check Printful dashboard for partial orders with external ID: %s'
+            ) % (str(e), external_id))
+
+    def _create_printful_order(self, order_data, headers):
+        """
+        Create order in Printful API.
+
+        Args:
+            order_data: Dict with order payload
+            headers: Auth headers for API
+
+        Returns:
+            Dict with API response
+
+        Raises:
+            UserError: If API returns error
+        """
+        url = f"{PRINTFUL_API_BASE}/orders"
+        response = requests.post(
+            url,
+            headers=headers,
+            data=json.dumps(order_data),
+            timeout=PRINTFUL_API_TIMEOUT
+        )
         result = response.json()
 
         if result.get('code') != 200:
-            raise UserError(_('Failed to create Printful order: %s\n\nData sent: %s') % (
-                str(result), str(order_data)
-            ))
+            _logger.error("Printful order creation failed: %s", result)
+            raise UserError(_(
+                'Failed to create Printful order: %s\n\nData sent: %s'
+            ) % (str(result), str(order_data)))
 
-        # Update order with Printful response
-        self._update_from_printful_response(result)
+        return result
 
-        # Confirm order
-        confirm_url = f"https://api.printful.com/orders/@{result['result']['external_id']}/confirm"
-        confirm_response = requests.post(confirm_url, headers=headers)
-        confirm_result = confirm_response.json()
+    def _confirm_printful_order(self, create_result, headers):
+        """
+        Confirm a created Printful order.
 
-        if confirm_result.get('code') != 200:
-            raise UserError(_('Failed to confirm Printful order: %s') % str(confirm_result))
+        Args:
+            create_result: Response from order creation
+            headers: Auth headers for API
 
-        # Update with confirmed data
-        self._update_from_printful_response(confirm_result)
+        Returns:
+            Dict with API response
+
+        Raises:
+            UserError: If confirmation fails
+        """
+        external_id = create_result['result']['external_id']
+        confirm_url = f"{PRINTFUL_API_BASE}/orders/@{external_id}/confirm"
+
+        response = requests.post(
+            confirm_url,
+            headers=headers,
+            timeout=PRINTFUL_API_TIMEOUT
+        )
+        result = response.json()
+
+        if result.get('code') != 200:
+            _logger.error(
+                "Printful order confirmation failed for external_id %s: %s",
+                external_id, result
+            )
+            raise UserError(_(
+                'Order was created in Printful but confirmation failed: %s\n\n'
+                'Please check Printful dashboard and confirm order manually. '
+                'External ID: %s'
+            ) % (str(result), external_id))
+
+        return result
 
     def _build_printful_order_data(self):
         """Build the order data payload for Printful API."""
@@ -100,8 +202,7 @@ class SaleOrder(models.Model):
         printful_config = self.env['printful.printful'].search([], limit=1)
 
         # Generate unique external ID using UUID for security
-        import uuid
-        external_id = "ODOO" + str(uuid.uuid4())
+        external_id = "ODOO-" + str(uuid.uuid4())
 
         # Build items list
         items = []
