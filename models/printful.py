@@ -30,6 +30,17 @@ class PrintfulPrintful(models.Model):
         string="Public Category",
     )
     multiple_product_images = fields.Boolean(string="Multiple Product Images")
+    currency_id = fields.Many2one(
+        comodel_name="res.currency",
+        string="Currency",
+        default=lambda self: self.env.company.currency_id,
+        help="Currency used for Printful pricing. Defaults to company currency.",
+    )
+    default_shipping_country_id = fields.Many2one(
+        comodel_name="res.country",
+        string="Default Shipping Country",
+        help="Default country for shipping estimates. If not set, will try to use customer address.",
+    )
 
     # Relationship to sync queues
     sync_queue_ids = fields.One2many(
@@ -480,22 +491,42 @@ class PrintfulPrintful(models.Model):
     def _get_shipping_info(self, sync_variant, headers):
         """Get shipping rate information for a variant."""
         try:
+            # Use configured shipping country or fallback to company country
+            config = self
+            country = config.default_shipping_country_id or self.env.company.country_id
+
+            if not country:
+                _logger.warning("No shipping country configured. Skipping shipping estimate.")
+                return None
+
+            # Get currency code
+            currency_code = config.currency_id.name if config.currency_id else self.env.company.currency_id.name
+
+            # Build recipient data with configured/company defaults
+            recipient_data = {
+                "country_code": country.code,
+                "phone": "string"  # Required by API but not used for rate calculation
+            }
+
+            # Add state code if available (for US/CA)
+            if country.code in ('US', 'CA'):
+                # Use first state in country as default
+                state = self.env['res.country.state'].search([('country_id', '=', country.id)], limit=1)
+                if state:
+                    recipient_data["state_code"] = state.code
+                    recipient_data["city"] = "City"  # Generic city
+                    recipient_data["address1"] = "123 Main St"  # Generic address
+                    recipient_data["zip"] = "00000"  # Generic zip
+
             shipping_data = {
-                "recipient": {
-                    "address1": "88 Lester St",
-                    "city": "St. John's",
-                    "country_code": "CA",
-                    "state_code": "NL",
-                    "zip": "A1E2P8",
-                    "phone": "string"
-                },
+                "recipient": recipient_data,
                 "items": [{
                     "variant_id": sync_variant.get('variant_id'),
                     "external_variant_id": sync_variant.get('external_id'),
                     "quantity": 1,
                     "value": sync_variant.get('retail_price', '0')
                 }],
-                "currency": "CAD",
+                "currency": currency_code,
                 "locale": "en_US"
             }
 

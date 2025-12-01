@@ -2,7 +2,6 @@
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 import requests
-import random
 import json
 import logging
 
@@ -97,8 +96,12 @@ class SaleOrder(models.Model):
 
     def _build_printful_order_data(self):
         """Build the order data payload for Printful API."""
-        # Generate unique external ID
-        external_id = "ODOO" + str(random.random()).split(".")[1]
+        # Get Printful configuration
+        printful_config = self.env['printful.printful'].search([], limit=1)
+
+        # Generate unique external ID using UUID for security
+        import uuid
+        external_id = "ODOO" + str(uuid.uuid4())
 
         # Build items list
         items = []
@@ -141,13 +144,20 @@ class SaleOrder(models.Model):
             "tax_number": str(partner.tax_number or ''),
         }
 
+        # Get currency from Printful config or fall back to order currency
+        currency_code = (
+            printful_config.currency_id.name
+            if printful_config and printful_config.currency_id
+            else self.currency_id.name
+        )
+
         return {
             "external_id": external_id,
             "shipping": "STANDARD",
             "recipient": recipient,
             "items": items,
             "retail_costs": {
-                "currency": "CAD",
+                "currency": currency_code,
                 "subtotal": price_subtotal_grand,
                 "discount": "0.00",
                 "shipping": shipping_cost,
