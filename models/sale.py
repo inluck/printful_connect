@@ -4,183 +4,219 @@ from odoo.exceptions import UserError
 import requests
 import random
 import json
+import logging
 
-# import logging
-# _logger = logging.getLogger(__name__)
+_logger = logging.getLogger(__name__)
+
 
 class SaleOrder(models.Model):
+    """
+    Extension of sale.order to handle Printful order synchronization.
+    """
     _inherit = 'sale.order'
 
-    order_ref = fields.Char()
+    # Printful order references
+    order_ref = fields.Char(string='Printful Order ID')
+    order_external_ref = fields.Char(string='External Ref')
+    order_store_ref = fields.Char(string='Store Ref')
+    order_shipping = fields.Char(string='Shipping Method')
+    order_shipping_service_name = fields.Char(string='Shipping Service')
+    printful_order_notes = fields.Char(string='Order Notes')
 
-    order_external_ref = fields.Char()
-    order_store_ref = fields.Char()
-    order_shipping = fields.Char()
-    order_shipping_service_name = fields.Char()
-    printful_order_notes = fields.Char()
-    order_currency = fields.Char()
-    order_subtotal = fields.Float()
-    order_discount = fields.Float()
-    order_digitization = fields.Float()
-    order_additional_fee = fields.Float()
-    order_fulfillment_fee = fields.Float()
-    order_retail_delivery_fee = fields.Float()
-    order_tax = fields.Float()
-    order_total = fields.Float()
+    # Printful costs breakdown
+    order_currency = fields.Char(string='Currency')
+    order_subtotal = fields.Float(string='Subtotal')
+    order_discount = fields.Float(string='Discount')
+    order_digitization = fields.Float(string='Digitization')
+    order_additional_fee = fields.Float(string='Additional Fee')
+    order_fulfillment_fee = fields.Float(string='Fulfillment Fee')
+    order_retail_delivery_fee = fields.Float(string='Retail Delivery Fee')
+    order_tax = fields.Float(string='Tax')
+    order_total = fields.Float(string='Total')
+    order_vat = fields.Float(string='VAT')
+    shipping = fields.Float(string='Shipping Cost')
 
-    printful_dashboard_url = fields.Char()
+    # Printful dashboard
+    printful_dashboard_url = fields.Char(string='Dashboard URL')
 
-    # price break down
-    customer_pays = fields.Float()
-    printful_price = fields.Float()
-    profit = fields.Float()
-    currency_symbol = fields.Char()
-    shipping = fields.Float()
-    order_vat = fields.Float()
+    # Price breakdown
+    customer_pays = fields.Float(string='Customer Pays')
+    printful_price = fields.Float(string='Printful Price')
+    profit = fields.Float(string='Profit')
+    currency_symbol = fields.Char(string='Currency Symbol')
 
-    tax_number = fields.Char(related='partner_id.tax_number')
-    company = fields.Char(related='partner_id.company')
+    # Related partner fields
+    tax_number = fields.Char(related='partner_id.tax_number', string='Tax Number')
+    company = fields.Char(related='partner_id.company', string='Company')
 
     def action_create_push_order_printful(self):
+        """Push this order to Printful for fulfillment."""
         for rec in self:
-            headers = {'Authorization': 'Bearer ' + self.env['printful.printful'].search([], limit=1).token}
+            rec._push_to_printful()
 
-            url = "https://api.printful.com/orders"
-            external_id = random.random()
-            external_id = "ODOO" + str(external_id).split(".")[1]
-            items = []
-            price_subtotal_grand = 0.0
-            shipping = 0.0
-            for line in rec.order_line:
-                # _logger.debug(line.price_subtotal)
-                if "Delivery" in line.name:
-                    shipping = line.price_subtotal
-#                 _logger.debug(line.price_subtotal_grand)
-                price_subtotal_grand = price_subtotal_grand + line.price_subtotal
-                if line.product_id.printful_variant_ref:
-                    items.append({
-                            "variant_id": line.product_id.printful_variant_id,
-                            "external_variant_id": line.product_id.printful_variant_ref,
-                            "quantity": line.product_uom_qty,
-                            "price": str(line.product_id.standard_price),
-                            "retail_price": str(line.product_id.standard_price),
-                            "name": line.product_id.name,
-                            "sku": line.product_id.printful_sku
-                        })
-            data = {
-                "external_id": external_id,
-                "shipping": "STANDARD",
-                "recipient": {
-                    "name": rec.partner_id.name,
-                    "company": self.env.user.company_id.name,
-                    "address1": rec.partner_id.street,
-                    "address2": rec.partner_id.street2,
-                    "city": rec.partner_id.city,
-                    "state_code": rec.partner_id.state_id.code if rec.partner_id.state_id else "",
-                    "state_name": rec.partner_id.state_id.name if rec.partner_id.state_id else "",
-                    "country_code": rec.partner_id.country_id.code if rec.partner_id.country_id else "",
-                    "country_name": rec.partner_id.country_id.name if rec.partner_id.country_id else "",
-                    "zip": str(rec.partner_id.zip),
-                    "phone": rec.partner_id.phone,
-                    "email": rec.partner_id.email,
-                    "tax_number": str(rec.partner_id.tax_number),
-                },
-                "items": items,
-                "retail_costs": {
-                    "currency": "CAD",
-                    "subtotal": price_subtotal_grand,
-                    "discount": "0.00",
-                    "shipping": shipping,
-                    "tax": rec.amount_tax
-                },
-                "gift": {
-                    "subject": "To " + rec.partner_id.name,
-                    "message": "Enjoy your merch!"
-                },
-                "packing_slip": {}
-            }
-            data = json.dumps(data)
-            response = requests.post(url, headers=headers, data=data)
-            printful = response.json()
-            if printful['code'] != 200:
-                one = str(printful)
-                two = str(data)
-                raise UserError(str(one + two))
-            else:
-                rec.order_ref = str(printful['result']['id'])
-                rec.order_external_ref = printful['result']['external_id']
-                rec.order_store_ref = printful['result']['store']
-                rec.order_shipping = printful['result']['shipping']
-                rec.order_shipping_service_name = printful['result']['shipping_service_name']
-                rec.printful_order_notes = printful['result']['notes']
-                rec.order_currency = printful['result']['costs']['currency']
-                rec.order_subtotal = printful['result']['costs']['subtotal']
-                rec.order_discount = printful['result']['costs']['discount']
-                rec.shipping = printful['result']['costs']['shipping']
-                rec.order_digitization = printful['result']['costs']['digitization']
-                rec.order_additional_fee = printful['result']['costs']['additional_fee']
-                rec.order_fulfillment_fee = printful['result']['costs']['fulfillment_fee']
-                rec.order_retail_delivery_fee = printful['result']['costs']['retail_delivery_fee']
-                rec.order_tax = printful['result']['costs']['tax']
-                rec.order_total = printful['result']['costs']['total']
-                rec.printful_dashboard_url = printful['result']['dashboard_url']
-                rec.customer_pays = printful['result']['pricing_breakdown'][0]['customer_pays']
-                rec.printful_price = printful['result']['pricing_breakdown'][0]['printful_price']
-                rec.profit = printful['result']['pricing_breakdown'][0]['profit']
-                rec.currency_symbol = printful['result']['pricing_breakdown'][0]['currency_symbol']
-                # one = str(printful)
-                # two = str(data)
-                # raise UserError(str(one + two))
+    def _push_to_printful(self):
+        """Internal method to push order to Printful."""
+        self.ensure_one()
 
-            #confirm order
-            confirmUrl = "https://api.printful.com/orders/@" + str(printful['result']['external_id']) + "/confirm"
-            response = requests.post(confirmUrl, headers=headers)
-            confirmPrintful = response.json()
-            if confirmPrintful['code'] != 200:
-                one = str(confirmPrintful)
-                raise UserError(str(one) + " " + confirmUrl)
-            else:
-                rec.order_ref = str(confirmPrintful['result']['id'])
-                rec.order_external_ref = confirmPrintful['result']['external_id']
-                rec.order_store_ref = confirmPrintful['result']['store']
-                rec.order_shipping = confirmPrintful['result']['shipping']
-                rec.order_shipping_service_name = confirmPrintful['result']['shipping_service_name']
-                rec.printful_order_notes = confirmPrintful['result']['notes']
-                rec.order_currency = confirmPrintful['result']['costs']['currency']
-                rec.order_subtotal = confirmPrintful['result']['costs']['subtotal']
-                rec.order_discount = confirmPrintful['result']['costs']['discount']
-                rec.shipping = confirmPrintful['result']['costs']['shipping']
-                rec.order_digitization = confirmPrintful['result']['costs']['digitization']
-                rec.order_additional_fee = confirmPrintful['result']['costs']['additional_fee']
-                rec.order_fulfillment_fee = confirmPrintful['result']['costs']['fulfillment_fee']
-                rec.order_retail_delivery_fee = confirmPrintful['result']['costs']['retail_delivery_fee']
-                rec.order_tax = confirmPrintful['result']['costs']['tax']
-                rec.order_total = confirmPrintful['result']['costs']['total']
-                rec.printful_dashboard_url = confirmPrintful['result']['dashboard_url']
-                rec.customer_pays = confirmPrintful['result']['pricing_breakdown'][0]['customer_pays']
-                rec.printful_price = confirmPrintful['result']['pricing_breakdown'][0]['printful_price']
-                rec.profit = confirmPrintful['result']['pricing_breakdown'][0]['profit']
-                rec.currency_symbol = confirmPrintful['result']['pricing_breakdown'][0]['currency_symbol']
-                # one = str(printful)
-                # two = str(data)
-                # raise UserError(str(one + two))
+        # Get API token
+        printful_config = self.env['printful.printful'].search([], limit=1)
+        if not printful_config or not printful_config.token:
+            raise UserError(_('Please configure a Printful API token.'))
+
+        headers = {
+            'Authorization': 'Bearer ' + printful_config.token,
+            'Content-Type': 'application/json',
+        }
+
+        # Build order data
+        order_data = self._build_printful_order_data()
+
+        # Create order
+        url = "https://api.printful.com/orders"
+        response = requests.post(url, headers=headers, data=json.dumps(order_data))
+        result = response.json()
+
+        if result.get('code') != 200:
+            raise UserError(_('Failed to create Printful order: %s\n\nData sent: %s') % (
+                str(result), str(order_data)
+            ))
+
+        # Update order with Printful response
+        self._update_from_printful_response(result)
+
+        # Confirm order
+        confirm_url = f"https://api.printful.com/orders/@{result['result']['external_id']}/confirm"
+        confirm_response = requests.post(confirm_url, headers=headers)
+        confirm_result = confirm_response.json()
+
+        if confirm_result.get('code') != 200:
+            raise UserError(_('Failed to confirm Printful order: %s') % str(confirm_result))
+
+        # Update with confirmed data
+        self._update_from_printful_response(confirm_result)
+
+    def _build_printful_order_data(self):
+        """Build the order data payload for Printful API."""
+        # Generate unique external ID
+        external_id = "ODOO" + str(random.random()).split(".")[1]
+
+        # Build items list
+        items = []
+        price_subtotal_grand = 0.0
+        shipping_cost = 0.0
+
+        for line in self.order_line:
+            price_subtotal_grand += line.price_subtotal
+
+            if "Delivery" in (line.name or ''):
+                shipping_cost = line.price_subtotal
+                continue
+
+            if line.product_id.printful_variant_ref:
+                items.append({
+                    "variant_id": line.product_id.printful_variant_id,
+                    "external_variant_id": line.product_id.printful_variant_ref,
+                    "quantity": int(line.product_uom_qty),
+                    "price": str(line.product_id.standard_price),
+                    "retail_price": str(line.product_id.standard_price),
+                    "name": line.product_id.name,
+                    "sku": line.product_id.printful_sku or '',
+                })
+
+        # Build recipient data
+        partner = self.partner_id
+        recipient = {
+            "name": partner.name,
+            "company": self.env.user.company_id.name,
+            "address1": partner.street or '',
+            "address2": partner.street2 or '',
+            "city": partner.city or '',
+            "state_code": partner.state_id.code if partner.state_id else '',
+            "state_name": partner.state_id.name if partner.state_id else '',
+            "country_code": partner.country_id.code if partner.country_id else '',
+            "country_name": partner.country_id.name if partner.country_id else '',
+            "zip": str(partner.zip or ''),
+            "phone": partner.phone or '',
+            "email": partner.email or '',
+            "tax_number": str(partner.tax_number or ''),
+        }
+
+        return {
+            "external_id": external_id,
+            "shipping": "STANDARD",
+            "recipient": recipient,
+            "items": items,
+            "retail_costs": {
+                "currency": "CAD",
+                "subtotal": price_subtotal_grand,
+                "discount": "0.00",
+                "shipping": shipping_cost,
+                "tax": self.amount_tax,
+            },
+            "gift": {
+                "subject": f"To {partner.name}",
+                "message": "Enjoy your merch!",
+            },
+            "packing_slip": {},
+        }
+
+    def _update_from_printful_response(self, response_data):
+        """Update sale order from Printful API response."""
+        result = response_data.get('result', {})
+        costs = result.get('costs', {})
+        pricing = result.get('pricing_breakdown', [{}])[0]
+
+        self.write({
+            'order_ref': str(result.get('id', '')),
+            'order_external_ref': result.get('external_id', ''),
+            'order_store_ref': result.get('store', ''),
+            'order_shipping': result.get('shipping', ''),
+            'order_shipping_service_name': result.get('shipping_service_name', ''),
+            'printful_order_notes': result.get('notes', ''),
+            'order_currency': costs.get('currency', ''),
+            'order_subtotal': costs.get('subtotal', 0),
+            'order_discount': costs.get('discount', 0),
+            'shipping': costs.get('shipping', 0),
+            'order_digitization': costs.get('digitization', 0),
+            'order_additional_fee': costs.get('additional_fee', 0),
+            'order_fulfillment_fee': costs.get('fulfillment_fee', 0),
+            'order_retail_delivery_fee': costs.get('retail_delivery_fee', 0),
+            'order_tax': costs.get('tax', 0),
+            'order_total': costs.get('total', 0),
+            'printful_dashboard_url': result.get('dashboard_url', ''),
+            'customer_pays': pricing.get('customer_pays', 0),
+            'printful_price': pricing.get('printful_price', 0),
+            'profit': pricing.get('profit', 0),
+            'currency_symbol': pricing.get('currency_symbol', ''),
+        })
+
 
 class ResPartner(models.Model):
+    """Extension of res.partner for Printful customer data."""
     _inherit = 'res.partner'
 
-    tax_number = fields.Char()
-    company = fields.Char()
+    tax_number = fields.Char(string='Tax Number')
+    company = fields.Char(string='Company Name')
+
 
 class SaleOrderLine(models.Model):
+    """Extension of sale.order.line for Printful products."""
     _inherit = 'sale.order.line'
 
     price_unit = fields.Float(
         string="Unit Price",
         related='product_id.standard_price',
-        store=True, required=True)
-    # Generic configuration fields
+        store=True,
+        required=True,
+    )
+
     product_id = fields.Many2one(
         comodel_name='product.product',
         string="Product",
-        change_default=True, ondelete='restrict', check_company=True, index='btree_not_null',
-        domain="[('printful_product_in_stock', '=', True),('sale_ok', '=', True), '|', ('company_id', '=', False), ('company_id', '=', company_id)]")
+        change_default=True,
+        ondelete='restrict',
+        check_company=True,
+        index='btree_not_null',
+        domain="[('printful_product_in_stock', '=', True), ('sale_ok', '=', True), "
+               "'|', ('company_id', '=', False), ('company_id', '=', company_id)]",
+    )

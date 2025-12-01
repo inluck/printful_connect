@@ -1,0 +1,455 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ==================== -->
+    <!-- SYNC QUEUE ITEM VIEWS -->
+    <!-- ==================== -->
+
+    <!-- Kanban View for Queue Items (Main Visual Queue) -->
+    <record id="printful_sync_queue_item_kanban" model="ir.ui.view">
+        <field name="name">printful.sync.queue.item.kanban</field>
+        <field name="model">printful.sync.queue.item</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="state" class="o_printful_sync_kanban">
+                <field name="name"/>
+                <field name="state"/>
+                <field name="progress"/>
+                <field name="variant_count"/>
+                <field name="variants_synced"/>
+                <field name="variant_summary"/>
+                <field name="color"/>
+                <field name="thumbnail_url"/>
+                <field name="error_message"/>
+                <progressbar field="state" colors='{"pending": "muted", "in_progress": "info", "done": "success", "error": "danger"}'/>
+                <templates>
+                    <t t-name="card" class="flex-row">
+                        <aside>
+                            <img t-if="record.thumbnail_url.raw_value"
+                                 t-att-src="record.thumbnail_url.raw_value"
+                                 class="o_image_64_cover rounded"
+                                 alt="Product"/>
+                            <div t-else="" class="o_image_64_cover bg-200 rounded d-flex align-items-center justify-content-center">
+                                <i class="fa fa-cube fa-2x text-muted"/>
+                            </div>
+                        </aside>
+                        <main class="ms-2">
+                            <strong class="o_kanban_record_title">
+                                <field name="name"/>
+                            </strong>
+                            <div class="text-muted small">
+                                <field name="variant_summary"/>
+                            </div>
+                            <div t-if="record.state.raw_value == 'in_progress'" class="mt-2">
+                                <div class="progress" style="height: 6px;">
+                                    <div class="progress-bar bg-info"
+                                         role="progressbar"
+                                         t-attf-style="width: #{record.progress.raw_value}%"/>
+                                </div>
+                                <small class="text-muted">
+                                    <field name="variants_synced"/>/<field name="variant_count"/> variants
+                                </small>
+                            </div>
+                            <div t-if="record.state.raw_value == 'error'" class="mt-1">
+                                <span class="badge text-bg-danger">
+                                    <i class="fa fa-exclamation-triangle"/> Error
+                                </span>
+                            </div>
+                            <div t-if="record.state.raw_value == 'done'" class="mt-1">
+                                <span class="badge text-bg-success">
+                                    <i class="fa fa-check"/> Done
+                                </span>
+                            </div>
+                        </main>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- Tree View for Queue Items -->
+    <record id="printful_sync_queue_item_tree" model="ir.ui.view">
+        <field name="name">printful.sync.queue.item.tree</field>
+        <field name="model">printful.sync.queue.item</field>
+        <field name="arch" type="xml">
+            <tree decoration-danger="state == 'error'"
+                  decoration-success="state == 'done'"
+                  decoration-info="state == 'in_progress'">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="printful_product_id"/>
+                <field name="variant_summary"/>
+                <field name="progress" widget="progressbar"/>
+                <field name="state" widget="badge"
+                       decoration-danger="state == 'error'"
+                       decoration-success="state == 'done'"
+                       decoration-info="state == 'in_progress'"
+                       decoration-muted="state == 'pending'"/>
+                <field name="product_template_id"/>
+                <field name="started_at"/>
+                <field name="completed_at"/>
+                <button name="action_retry" type="object" string="Retry"
+                        class="btn-link" invisible="state != 'error'"/>
+                <button name="action_view_product" type="object" string="View"
+                        class="btn-link" invisible="not product_template_id"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- Form View for Queue Items -->
+    <record id="printful_sync_queue_item_form" model="ir.ui.view">
+        <field name="name">printful.sync.queue.item.form</field>
+        <field name="model">printful.sync.queue.item</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_sync_product" type="object"
+                            string="Sync Now" class="btn-primary"
+                            invisible="state not in ('pending', 'error')"/>
+                    <button name="action_retry" type="object"
+                            string="Retry" class="btn-warning"
+                            invisible="state != 'error'"/>
+                    <button name="action_view_product" type="object"
+                            string="View Product" class="btn-secondary"
+                            invisible="not product_template_id"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="pending,in_progress,done"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Product Name"/></h1>
+                    </div>
+                    <group>
+                        <group string="Printful Info">
+                            <field name="printful_product_id"/>
+                            <field name="printful_external_id"/>
+                            <field name="thumbnail_url" widget="url"/>
+                        </group>
+                        <group string="Sync Progress">
+                            <field name="variant_count"/>
+                            <field name="variants_synced"/>
+                            <field name="progress" widget="progressbar"/>
+                            <field name="color_count"/>
+                            <field name="size_count"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Timing">
+                            <field name="started_at"/>
+                            <field name="completed_at"/>
+                        </group>
+                        <group string="Odoo Link">
+                            <field name="product_template_id"/>
+                            <field name="queue_id"/>
+                        </group>
+                    </group>
+                    <group string="Error Details" invisible="state != 'error'">
+                        <field name="error_message" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- ==================== -->
+    <!-- SYNC QUEUE VIEWS -->
+    <!-- ==================== -->
+
+    <!-- Tree View for Sync Queue -->
+    <record id="printful_sync_queue_tree" model="ir.ui.view">
+        <field name="name">printful.sync.queue.tree</field>
+        <field name="model">printful.sync.queue</field>
+        <field name="arch" type="xml">
+            <tree decoration-danger="state == 'error'"
+                  decoration-success="state == 'done'"
+                  decoration-info="state == 'running'">
+                <field name="name"/>
+                <field name="printful_config_id"/>
+                <field name="total_items"/>
+                <field name="completed_items"/>
+                <field name="error_items"/>
+                <field name="progress" widget="progressbar"/>
+                <field name="state" widget="badge"
+                       decoration-danger="state == 'error'"
+                       decoration-success="state == 'done'"
+                       decoration-info="state == 'running'"
+                       decoration-warning="state == 'pending'"
+                       decoration-muted="state in ('draft', 'cancelled')"/>
+                <field name="started_at"/>
+                <field name="duration" widget="float_time"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- Form View for Sync Queue -->
+    <record id="printful_sync_queue_form" model="ir.ui.view">
+        <field name="name">printful.sync.queue.form</field>
+        <field name="model">printful.sync.queue</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_populate_queue" type="object"
+                            string="Fetch Products" class="btn-primary"
+                            invisible="state != 'draft'"/>
+                    <button name="action_start_sync" type="object"
+                            string="Start Sync" class="btn-success"
+                            invisible="state not in ('pending', 'error')"/>
+                    <button name="action_retry_errors" type="object"
+                            string="Retry Errors" class="btn-warning"
+                            invisible="error_items == 0"/>
+                    <button name="action_cancel" type="object"
+                            string="Cancel" class="btn-secondary"
+                            invisible="state in ('done', 'cancelled')"/>
+                    <button name="action_reset_to_draft" type="object"
+                            string="Reset" class="btn-link"
+                            invisible="state not in ('cancelled', 'error', 'done')"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,pending,running,done"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="%(printful_sync_queue_item_action)d" type="action"
+                                class="oe_stat_button" icon="fa-cube"
+                                context="{'default_queue_id': active_id}">
+                            <div class="o_stat_info">
+                                <field name="total_items" class="o_stat_value"/>
+                                <span class="o_stat_text">Products</span>
+                            </div>
+                        </button>
+                        <button class="oe_stat_button" icon="fa-check-circle text-success"
+                                invisible="completed_items == 0">
+                            <div class="o_stat_info">
+                                <field name="completed_items" class="o_stat_value"/>
+                                <span class="o_stat_text">Completed</span>
+                            </div>
+                        </button>
+                        <button class="oe_stat_button" icon="fa-exclamation-circle text-danger"
+                                invisible="error_items == 0">
+                            <div class="o_stat_info">
+                                <field name="error_items" class="o_stat_value"/>
+                                <span class="o_stat_text">Errors</span>
+                            </div>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Sync Batch Name"/></h1>
+                    </div>
+                    <group>
+                        <group string="Configuration">
+                            <field name="printful_config_id"/>
+                        </group>
+                        <group string="Progress">
+                            <field name="progress" widget="progressbar"/>
+                            <field name="pending_items"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Timing">
+                            <field name="started_at"/>
+                            <field name="completed_at"/>
+                            <field name="duration" widget="float_time"/>
+                        </group>
+                    </group>
+                    <group string="Error Details" invisible="not error_message">
+                        <field name="error_message" nolabel="1"/>
+                    </group>
+                    <notebook>
+                        <page string="Products to Sync" name="items">
+                            <field name="item_ids" nolabel="1"
+                                   context="{'default_queue_id': active_id}">
+                                <tree decoration-danger="state == 'error'"
+                                      decoration-success="state == 'done'"
+                                      decoration-info="state == 'in_progress'">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="name"/>
+                                    <field name="variant_summary"/>
+                                    <field name="progress" widget="progressbar"/>
+                                    <field name="state" widget="badge"
+                                           decoration-danger="state == 'error'"
+                                           decoration-success="state == 'done'"
+                                           decoration-info="state == 'in_progress'"
+                                           decoration-muted="state == 'pending'"/>
+                                    <button name="action_sync_product" type="object"
+                                            string="Sync" icon="fa-refresh"
+                                            invisible="state not in ('pending', 'error')"/>
+                                </tree>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- Kanban View for Sync Queue -->
+    <record id="printful_sync_queue_kanban" model="ir.ui.view">
+        <field name="name">printful.sync.queue.kanban</field>
+        <field name="model">printful.sync.queue</field>
+        <field name="arch" type="xml">
+            <kanban class="o_kanban_mobile">
+                <field name="name"/>
+                <field name="state"/>
+                <field name="progress"/>
+                <field name="total_items"/>
+                <field name="completed_items"/>
+                <field name="error_items"/>
+                <templates>
+                    <t t-name="card">
+                        <div class="d-flex justify-content-between">
+                            <strong><field name="name"/></strong>
+                            <field name="state" widget="badge"
+                                   decoration-danger="state == 'error'"
+                                   decoration-success="state == 'done'"
+                                   decoration-info="state == 'running'"
+                                   decoration-warning="state == 'pending'"/>
+                        </div>
+                        <div class="mt-2">
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar"
+                                     t-att-class="{'bg-success': record.state.raw_value == 'done', 'bg-info': record.state.raw_value == 'running', 'bg-danger': record.state.raw_value == 'error'}"
+                                     t-attf-style="width: #{record.progress.raw_value}%"/>
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-between mt-1 small text-muted">
+                            <span><field name="completed_items"/>/<field name="total_items"/> products</span>
+                            <span t-if="record.error_items.raw_value > 0" class="text-danger">
+                                <field name="error_items"/> errors
+                            </span>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- Search View for Sync Queue -->
+    <record id="printful_sync_queue_search" model="ir.ui.view">
+        <field name="name">printful.sync.queue.search</field>
+        <field name="model">printful.sync.queue</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="printful_config_id"/>
+                <filter name="filter_draft" string="Draft" domain="[('state', '=', 'draft')]"/>
+                <filter name="filter_pending" string="Pending" domain="[('state', '=', 'pending')]"/>
+                <filter name="filter_running" string="Running" domain="[('state', '=', 'running')]"/>
+                <filter name="filter_done" string="Completed" domain="[('state', '=', 'done')]"/>
+                <filter name="filter_error" string="Errors" domain="[('state', '=', 'error')]"/>
+                <separator/>
+                <filter name="filter_today" string="Today" domain="[('create_date', '>=', context_today().strftime('%Y-%m-%d'))]"/>
+                <group expand="0" string="Group By">
+                    <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
+                    <filter name="group_store" string="Store" context="{'group_by': 'printful_config_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Search View for Queue Items -->
+    <record id="printful_sync_queue_item_search" model="ir.ui.view">
+        <field name="name">printful.sync.queue.item.search</field>
+        <field name="model">printful.sync.queue.item</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="printful_product_id"/>
+                <field name="queue_id"/>
+                <filter name="filter_pending" string="Pending" domain="[('state', '=', 'pending')]"/>
+                <filter name="filter_in_progress" string="In Progress" domain="[('state', '=', 'in_progress')]"/>
+                <filter name="filter_done" string="Done" domain="[('state', '=', 'done')]"/>
+                <filter name="filter_error" string="Errors" domain="[('state', '=', 'error')]"/>
+                <group expand="0" string="Group By">
+                    <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
+                    <filter name="group_queue" string="Queue" context="{'group_by': 'queue_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- ==================== -->
+    <!-- ACTIONS -->
+    <!-- ==================== -->
+
+    <!-- Action for Sync Queue -->
+    <record id="printful_sync_queue_action" model="ir.actions.act_window">
+        <field name="name">Sync Queue</field>
+        <field name="res_model">printful.sync.queue</field>
+        <field name="view_mode">tree,kanban,form</field>
+        <field name="search_view_id" ref="printful_sync_queue_search"/>
+        <field name="context">{'search_default_filter_running': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first sync queue
+            </p>
+            <p>
+                Sync queues let you visually track the progress of product imports from Printful.
+                Each product and its variants are tracked individually.
+            </p>
+        </field>
+    </record>
+
+    <!-- Action for Queue Items (standalone) -->
+    <record id="printful_sync_queue_item_action" model="ir.actions.act_window">
+        <field name="name">Sync Items</field>
+        <field name="res_model">printful.sync.queue.item</field>
+        <field name="view_mode">kanban,tree,form</field>
+        <field name="search_view_id" ref="printful_sync_queue_item_search"/>
+        <field name="context">{'search_default_group_state': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No products in queue
+            </p>
+            <p>
+                Products will appear here when you populate a sync queue.
+            </p>
+        </field>
+    </record>
+
+    <!-- ==================== -->
+    <!-- MENU ITEMS -->
+    <!-- ==================== -->
+
+    <!-- Root menu for Printful -->
+    <menuitem id="menu_printful_root"
+              name="Printful"
+              web_icon="printful_connect,static/description/icon.png"
+              sequence="65"/>
+
+    <!-- Sync Queue submenu -->
+    <menuitem id="menu_printful_sync"
+              name="Sync Queue"
+              parent="menu_printful_root"
+              sequence="10"/>
+
+    <menuitem id="menu_printful_sync_queue"
+              name="Sync Batches"
+              parent="menu_printful_sync"
+              action="printful_sync_queue_action"
+              sequence="10"/>
+
+    <menuitem id="menu_printful_sync_items"
+              name="All Products"
+              parent="menu_printful_sync"
+              action="printful_sync_queue_item_action"
+              sequence="20"/>
+
+    <!-- Configuration submenu -->
+    <menuitem id="menu_printful_config"
+              name="Configuration"
+              parent="menu_printful_root"
+              sequence="90"/>
+
+    <menuitem id="menu_printful_stores"
+              name="Printful Stores"
+              parent="menu_printful_config"
+              action="action_printful_view"
+              sequence="10"/>
+
+    <!-- Sequence for queue names -->
+    <record id="seq_printful_sync_queue" model="ir.sequence">
+        <field name="name">Printful Sync Queue</field>
+        <field name="code">printful.sync.queue</field>
+        <field name="prefix">SYNC/</field>
+        <field name="padding">5</field>
+    </record>
+
+</odoo>
