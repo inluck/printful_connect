@@ -1219,8 +1219,9 @@ class PrintfulPrintful(models.Model):
         # Validate configuration
         if not self.primary_default_address_id:
             _logger.warning(
-                "Shipping estimate skipped: No primary default address configured. "
-                "Go to Printful Settings > Default Addresses and create one marked as Primary."
+                "Shipping estimate skipped for product %s: No primary default address configured. "
+                "Go to Printful Settings > Default Addresses and create one marked as Primary.",
+                catalog_product_id
             )
             return None
 
@@ -1248,7 +1249,7 @@ class PrintfulPrintful(models.Model):
                 "locale": "en_US"
             }
 
-            _logger.debug(
+            _logger.info(
                 "Fetching shipping rates for product %s (variant %s) to %s, %s",
                 catalog_product_id, variant_id,
                 recipient_data.get('city'), recipient_data.get('country_code')
@@ -1318,9 +1319,14 @@ class PrintfulPrintful(models.Model):
             # Cache the result for other variants of same product
             if catalog_product_id and shipping_info:
                 shipping_cache[catalog_product_id] = shipping_info
-                _logger.debug(
-                    "Cached shipping estimate for product %s: %s",
+                _logger.info(
+                    "Shipping estimate for product %s: %s",
                     catalog_product_id, shipping_info
+                )
+            elif not shipping_info:
+                _logger.warning(
+                    "No delivery days in shipping response for product %s",
+                    catalog_product_id
                 )
 
             return shipping_info
