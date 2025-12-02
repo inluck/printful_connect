@@ -99,7 +99,7 @@ class TestShippingInfo(PrintfulTestCase):
 
     @patch('odoo.addons.printful_connect.models.printful.requests.post')
     def test_get_shipping_info_success(self, mock_post):
-        """Test successful shipping info retrieval."""
+        """Test successful shipping info retrieval from API."""
         mock_post.return_value = self._create_mock_response(self.MOCK_SHIPPING_RATES)
 
         # Set up default shipping address
@@ -111,10 +111,33 @@ class TestShippingInfo(PrintfulTestCase):
             'retail_price': '25.00',
         }
         headers = {'Authorization': 'Bearer test'}
+        shipping_cache = {}
 
-        result = self.printful_config._get_shipping_info(sync_variant, headers)
+        result = self.printful_config._get_shipping_info(
+            sync_variant, headers, catalog_product_id=71, shipping_cache=shipping_cache
+        )
 
         self.assertEqual(result, '3-4 Business Days')
+        # Verify result was cached
+        self.assertEqual(shipping_cache.get(71), '3-4 Business Days')
+
+    @patch('odoo.addons.printful_connect.models.printful.requests.post')
+    def test_get_shipping_info_uses_cache(self, mock_post):
+        """Test that cached shipping info is returned without API call."""
+        self._create_default_shipping_address()
+
+        sync_variant = {'variant_id': 4011, 'retail_price': '25.00'}
+        headers = {'Authorization': 'Bearer test'}
+        # Pre-populate cache
+        shipping_cache = {71: '5-7 Business Days'}
+
+        result = self.printful_config._get_shipping_info(
+            sync_variant, headers, catalog_product_id=71, shipping_cache=shipping_cache
+        )
+
+        self.assertEqual(result, '5-7 Business Days')
+        # API should not be called when cache hit
+        mock_post.assert_not_called()
 
     @patch('odoo.addons.printful_connect.models.printful.requests.post')
     def test_get_shipping_info_no_address(self, mock_post):
@@ -123,7 +146,7 @@ class TestShippingInfo(PrintfulTestCase):
         self.printful_config.default_address_ids.unlink()
 
         sync_variant = {'variant_id': 4011}
-        result = self.printful_config._get_shipping_info(sync_variant, {})
+        result = self.printful_config._get_shipping_info(sync_variant, {}, catalog_product_id=71)
 
         self.assertIsNone(result)
         mock_post.assert_not_called()
@@ -135,7 +158,7 @@ class TestShippingInfo(PrintfulTestCase):
         self._create_default_shipping_address()
 
         sync_variant = {'variant_id': 4011, 'retail_price': '25.00'}
-        result = self.printful_config._get_shipping_info(sync_variant, {})
+        result = self.printful_config._get_shipping_info(sync_variant, {}, catalog_product_id=71)
 
         self.assertIsNone(result)
 

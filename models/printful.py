@@ -637,6 +637,7 @@ class PrintfulPrintful(models.Model):
         # Initialize caches for this sync session to avoid redundant API calls
         size_guide_cache = {}
         category_cache = {}
+        shipping_cache = {}  # Cache shipping info by catalog product_id
 
         # Fetch product details
         product_url = f"https://api.printful.com/store/products/{printful_product_id}"
@@ -704,6 +705,7 @@ class PrintfulPrintful(models.Model):
                         lowest_price,
                         size_guide_cache,
                         category_cache,
+                        shipping_cache,
                     )
 
                     # Track colors and sizes for statistics
@@ -842,13 +844,14 @@ class PrintfulPrintful(models.Model):
     # ==========================================
 
     def _process_sync_variant(self, sync_variant, product_template, config, headers, lowest_price,
-                              size_guide_cache=None, category_cache=None):
+                              size_guide_cache=None, category_cache=None, shipping_cache=None):
         """
         Process a single sync variant from Printful.
 
         Args:
             size_guide_cache: Dict to cache size guides by product_id
             category_cache: Dict to cache categories by category_id
+            shipping_cache: Dict to cache shipping info by catalog product_id
 
         Returns dict with:
             - size: size value
@@ -861,6 +864,8 @@ class PrintfulPrintful(models.Model):
             size_guide_cache = {}
         if category_cache is None:
             category_cache = {}
+        if shipping_cache is None:
+            shipping_cache = {}
         result = {
             'size': None,
             'color': None,
@@ -975,8 +980,13 @@ class PrintfulPrintful(models.Model):
         )
 
         if product_variant:
-            # Get shipping info
-            shipping_info = self._get_shipping_info(sync_variant, headers)
+            # Get catalog product_id for caching (all variants of same product share shipping estimate)
+            catalog_product_id = sync_variant.get('product', {}).get('product_id')
+
+            # Get shipping info (cached by catalog product_id)
+            shipping_info = self._get_shipping_info(
+                sync_variant, headers, catalog_product_id, shipping_cache
+            )
 
             # Get category (with caching)
             category_ids = self._get_category_ids(
@@ -987,10 +997,9 @@ class PrintfulPrintful(models.Model):
             )
 
             # Get size guide (with caching)
-            product_id = sync_variant.get('product', {}).get('product_id')
             size_guide = self._get_size_guide_safe(
                 headers,
-                product_id,
+                catalog_product_id,
                 size_guide_cache,
             )
 
@@ -1180,26 +1189,45 @@ class PrintfulPrintful(models.Model):
     # SHIPPING & CATEGORY HELPERS
     # ==========================================
 
-    def _get_shipping_info(self, sync_variant, headers):
+    def _get_shipping_info(self, sync_variant, headers, catalog_product_id=None, shipping_cache=None):
         """
-        Get shipping rate information for a variant.
+        Get shipping rate information for a product type.
 
-        Requires a configured primary default address for accurate shipping estimates.
-        Returns delivery time range string (e.g., "5-7 Business Days") or None.
+        Uses the primary default address to estimate delivery time. Results are
+        cached by catalog product_id since all variants of the same product type
+        ship from the same facility and have identical delivery estimates.
 
         Args:
             sync_variant: Dict with variant_id, external_id, retail_price
             headers: API auth headers
+            catalog_product_id: Printful catalog product ID for caching
+            shipping_cache: Dict to cache results (modified in place)
 
         Returns:
-            Delivery time string or None if unavailable
+            Delivery time string (e.g., "5-7 Business Days") or None if unavailable
         """
         self.ensure_one()
 
+        if shipping_cache is None:
+            shipping_cache = {}
+
+        # Check cache first - all variants of same product have same shipping estimate
+        if catalog_product_id and catalog_product_id in shipping_cache:
+            return shipping_cache[catalog_product_id]
+
+        # Validate configuration
         if not self.primary_default_address_id:
-            _logger.debug(
-                "No default address configured - skipping shipping estimate. "
-                "Configure a default address in Printful settings for shipping info."
+            _logger.warning(
+                "Shipping estimate skipped: No primary default address configured. "
+                "Go to Printful Settings > Default Addresses and create one marked as Primary."
+            )
+            return None
+
+        variant_id = sync_variant.get('variant_id')
+        if not variant_id:
+            _logger.warning(
+                "Shipping estimate skipped: No variant_id in sync data for product %s",
+                catalog_product_id
             )
             return None
 
@@ -1210,14 +1238,20 @@ class PrintfulPrintful(models.Model):
             shipping_data = {
                 "recipient": recipient_data,
                 "items": [{
-                    "variant_id": sync_variant.get('variant_id'),
+                    "variant_id": variant_id,
                     "external_variant_id": sync_variant.get('external_id'),
                     "quantity": 1,
-                    "value": sync_variant.get('retail_price', '0')
+                    "value": str(sync_variant.get('retail_price', '0'))
                 }],
                 "currency": currency_code,
                 "locale": "en_US"
             }
+
+            _logger.debug(
+                "Fetching shipping rates for product %s (variant %s) to %s, %s",
+                catalog_product_id, variant_id,
+                recipient_data.get('city'), recipient_data.get('country_code')
+            )
 
             response = self._make_api_post_request(
                 f"{PRINTFUL_API_V1_BASE}/shipping/rates",
@@ -1227,7 +1261,22 @@ class PrintfulPrintful(models.Model):
             result = response.json()
 
             if result.get('code') != 200:
-                _logger.warning("Shipping API error: %s", result.get('error', {}))
+                error_info = result.get('error', {})
+                _logger.error(
+                    "Printful shipping API error for product %s: [%s] %s",
+                    catalog_product_id,
+                    error_info.get('code', result.get('code')),
+                    error_info.get('message', result.get('result', 'Unknown error'))
+                )
+                return None
+
+            rates = result.get('result', [])
+            if not rates:
+                _logger.warning(
+                    "No shipping rates returned for product %s to %s. "
+                    "Check if this product can ship to the default address.",
+                    catalog_product_id, recipient_data.get('country_code')
+                )
                 return None
 
             # Get configured default shipping method or fall back to STANDARD
@@ -1236,21 +1285,73 @@ class PrintfulPrintful(models.Model):
                 target_method = self.default_shipping_method_id.printful_method_id
 
             # Find matching rate
-            for rate in result.get('result', []):
+            shipping_info = None
+            for rate in rates:
                 if rate.get('id') == target_method:
-                    min_days = rate.get('minDeliveryDays', 0)
-                    max_days = rate.get('maxDeliveryDays', 0)
-                    return f"{min_days}-{max_days} Business Days"
+                    min_days = rate.get('minDeliveryDays')
+                    max_days = rate.get('maxDeliveryDays')
+                    if min_days and max_days:
+                        shipping_info = f"{min_days}-{max_days} Business Days"
+                    elif min_days:
+                        shipping_info = f"{min_days}+ Business Days"
+                    elif max_days:
+                        shipping_info = f"Up to {max_days} Business Days"
+                    break
 
-            # Use first available rate if target method not found
-            if result.get('result'):
-                rate = result['result'][0]
-                min_days = rate.get('minDeliveryDays', 0)
-                max_days = rate.get('maxDeliveryDays', 0)
-                return f"{min_days}-{max_days} Business Days"
+            # Fall back to first available rate if target method not found
+            if not shipping_info and rates:
+                rate = rates[0]
+                _logger.debug(
+                    "Shipping method %s not available for product %s, using %s",
+                    target_method, catalog_product_id, rate.get('id')
+                )
+                min_days = rate.get('minDeliveryDays')
+                max_days = rate.get('maxDeliveryDays')
+                if min_days and max_days:
+                    shipping_info = f"{min_days}-{max_days} Business Days"
+                elif min_days:
+                    shipping_info = f"{min_days}+ Business Days"
+                elif max_days:
+                    shipping_info = f"Up to {max_days} Business Days"
 
+            # Cache the result for other variants of same product
+            if catalog_product_id and shipping_info:
+                shipping_cache[catalog_product_id] = shipping_info
+                _logger.debug(
+                    "Cached shipping estimate for product %s: %s",
+                    catalog_product_id, shipping_info
+                )
+
+            return shipping_info
+
+        except requests.exceptions.Timeout as e:
+            _logger.error(
+                "Shipping API timeout for product %s: %s. "
+                "The Printful API may be slow or unreachable.",
+                catalog_product_id, str(e)
+            )
+        except requests.exceptions.ConnectionError as e:
+            _logger.error(
+                "Shipping API connection error for product %s: %s. "
+                "Check network connectivity.",
+                catalog_product_id, str(e)
+            )
+        except requests.exceptions.HTTPError as e:
+            _logger.error(
+                "Shipping API HTTP error for product %s: %s",
+                catalog_product_id, str(e)
+            )
+        except json.JSONDecodeError as e:
+            _logger.error(
+                "Invalid JSON response from shipping API for product %s: %s",
+                catalog_product_id, str(e)
+            )
         except Exception as e:
-            _logger.warning("Failed to get shipping info: %s", str(e))
+            _logger.error(
+                "Unexpected error getting shipping info for product %s: %s",
+                catalog_product_id, str(e),
+                exc_info=True
+            )
 
         return None
 
