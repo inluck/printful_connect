@@ -246,7 +246,7 @@
                     <div class="oe_button_box" name="button_box">
                         <button name="%(printful_sync_queue_item_action)d" type="action"
                                 class="oe_stat_button" icon="fa-cube"
-                                context="{'default_queue_id': active_id}">
+                                context="{'default_queue_id': id}">
                             <div class="o_stat_info">
                                 <field name="total_items" class="o_stat_value"/>
                                 <span class="o_stat_text">Products</span>
@@ -292,7 +292,7 @@
                     <notebook>
                         <page string="Products to Sync" name="items">
                             <field name="item_ids" nolabel="1"
-                                   context="{'default_queue_id': active_id}">
+                                   context="{'default_queue_id': id}">
                                 <list decoration-danger="state == 'error'"
                                       decoration-success="state == 'done'"
                                       decoration-info="state == 'in_progress'">
