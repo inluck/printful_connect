@@ -2,6 +2,7 @@
 import requests
 import base64
 import json
+from html import escape as html_escape
 from tabulate import tabulate
 from ratelimit import limits, sleep_and_retry
 from odoo import api, fields, models, _
@@ -743,15 +744,20 @@ class PrintfulPrintful(models.Model):
         output_str = ""
 
         for table in product_info.get('size_tables', []):
-            table_type = table.get('type', '').replace('_', ' ').title()
+            # Escape all external content to prevent XSS
+            table_type = html_escape(table.get('type', '').replace('_', ' ').title())
             output_str += f"<h2>{table_type} Guide</h2>\n"
 
             if table.get('image_url'):
-                output_str += f"<img src='{table['image_url']}' alt='Guide Image'>\n"
+                # Validate and escape URL
+                image_url = html_escape(table['image_url'])
+                output_str += f"<img src='{image_url}' alt='Guide Image'>\n"
             if table.get('image_description'):
-                output_str += f"<div>{table['image_description']}</div>\n"
+                desc = html_escape(table['image_description'])
+                output_str += f"<div>{desc}</div>\n"
             if table.get('description'):
-                output_str += f"<div>{table['description']}</div>\n"
+                desc = html_escape(table['description'])
+                output_str += f"<div>{desc}</div>\n"
 
             # Build table headers
             table_headers = ["Size"]
@@ -827,27 +833,45 @@ class PrintfulPrintful(models.Model):
         if existing:
             return existing
 
-        # Create customer
+        # Find or create customer (deduplicate by email)
         recipient = order.get('recipient', {})
-        customer = Partner.create({
-            'name': recipient.get('name') or "Printful Customer",
-            'city': recipient.get('city', ''),
-            'street': ' '.join(filter(None, [
-                recipient.get('address1', ''),
-                recipient.get('address2', ''),
-                recipient.get('state_code', ''),
-            ])),
-            'street2': ' '.join(filter(None, [
-                recipient.get('country_name', ''),
-                recipient.get('state_name', ''),
-                recipient.get('country_code', ''),
-            ])),
-            'zip': recipient.get('zip', ''),
-            'email': recipient.get('email', ''),
-            'phone': recipient.get('phone', ''),
-            'tax_number': str(recipient.get('tax_number', '')),
-            'company': recipient.get('company', ''),
-        })
+        customer_email = recipient.get('email', '').strip().lower()
+        customer = None
+
+        # Try to find existing customer by email first
+        if customer_email:
+            customer = Partner.search([
+                ('email', '=ilike', customer_email),
+                '|', ('company_id', '=', False), ('company_id', '=', self.env.company.id)
+            ], limit=1)
+
+        # If no existing customer found, create a new one
+        if not customer:
+            customer_vals = {
+                'name': recipient.get('name') or "Printful Customer",
+                'city': recipient.get('city', ''),
+                'street': ' '.join(filter(None, [
+                    recipient.get('address1', ''),
+                    recipient.get('address2', ''),
+                    recipient.get('state_code', ''),
+                ])),
+                'street2': ' '.join(filter(None, [
+                    recipient.get('country_name', ''),
+                    recipient.get('state_name', ''),
+                    recipient.get('country_code', ''),
+                ])),
+                'zip': recipient.get('zip', ''),
+                'email': recipient.get('email', ''),
+                'phone': recipient.get('phone', ''),
+                'tax_number': str(recipient.get('tax_number', '')),
+                'company': recipient.get('company', ''),
+            }
+            customer = Partner.create(customer_vals)
+            _logger.info("Created new customer '%s' for Printful order %s",
+                        customer.name, order_ref)
+        else:
+            _logger.info("Using existing customer '%s' (ID: %d) for Printful order %s",
+                        customer.name, customer.id, order_ref)
 
         # Create order lines
         lines = []

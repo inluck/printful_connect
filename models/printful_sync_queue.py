@@ -169,7 +169,14 @@ class PrintfulSyncQueue(models.Model):
             raise UserError(_('Failed to populate queue: %s') % str(e))
 
     def action_start_sync(self):
-        """Start processing the sync queue."""
+        """
+        Start processing the sync queue.
+
+        This method sets the queue state to 'running' and processes the first
+        batch of items. The cron job (cron_process_sync_queue) will continue
+        processing remaining items in batches every 2 minutes to avoid
+        HTTP request timeouts on large catalogs.
+        """
         self.ensure_one()
         if self.state not in ('pending', 'error'):
             raise UserError(_('Can only start a pending or errored queue.'))
@@ -180,25 +187,31 @@ class PrintfulSyncQueue(models.Model):
             'error_message': False,
         })
 
-        # Process items in batches
-        pending_items = self.item_ids.filtered(lambda x: x.state in ('pending', 'error'))
-        for item in pending_items:
-            try:
-                item.action_sync_product()
-            except Exception as e:
-                _logger.error("Failed to sync product %s: %s", item.name, str(e))
-                item.write({
-                    'state': 'error',
-                    'error_message': str(e),
-                })
-                continue
+        # Reset error items for retry
+        error_items = self.item_ids.filtered(lambda x: x.state == 'error')
+        if error_items:
+            error_items.write({'state': 'pending', 'error_message': False})
 
-        # Check completion status
-        if self.error_items > 0:
-            self.state = 'error'
-        else:
-            self.state = 'done'
-        self.completed_at = fields.Datetime.now()
+        # Process first batch immediately to give user feedback
+        # Remaining items will be processed by the cron job
+        self.action_process_next_batch(batch_size=5)
+
+        # Return notification to inform user about background processing
+        remaining = len(self.item_ids.filtered(lambda x: x.state == 'pending'))
+        if remaining > 0:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Sync Started'),
+                    'message': _(
+                        'First batch processed. %d products remaining will be '
+                        'synced automatically in the background (every 2 minutes).'
+                    ) % remaining,
+                    'type': 'info',
+                    'sticky': False,
+                }
+            }
 
     def action_process_next_batch(self, batch_size=5):
         """Process next batch of items. Called by cron or manually."""
