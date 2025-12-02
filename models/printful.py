@@ -981,7 +981,8 @@ class PrintfulPrintful(models.Model):
 
         if product_variant:
             # Get catalog product_id for caching (all variants of same product share shipping estimate)
-            catalog_product_id = sync_variant.get('product', {}).get('product_id')
+            # This comes from the variant details API response, not the sync_variant
+            catalog_product_id = variant_data.get('product_id')
 
             # Get shipping info (cached by catalog product_id)
             shipping_info = self._get_shipping_info(
