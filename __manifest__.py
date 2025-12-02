@@ -15,6 +15,8 @@ This module provides bi-directional integration between Odoo and Printful:
 * **Size Guides** - Automatic size guide generation for website
 * **Webhooks** - Real-time notifications for order status, shipments, and stock
 * **Shipping Methods** - Configurable shipping method mapping with markup support
+* **Customer Portal** - Order tracking with timeline visualization
+* **Email Notifications** - Automated customer emails for order status updates
 
 Features:
 ---------
@@ -26,6 +28,18 @@ Features:
 * Configurable shipping methods with carrier mapping
 * Real-time shipping rate calculation
 * API v2 support with improved rate limiting
+* Customer portal with order tracking and timeline
+* Webhook-driven email state machine for customer notifications
+* Portal access via secure access tokens in email links
+
+Version 2.1 Changes:
+--------------------
+* Added customer portal with order tracking page
+* Visual timeline showing fulfillment progress
+* Automated customer email notifications on status changes
+* Email templates for: order confirmed, in production, shipped, delivered, issues
+* Portal links with access tokens for unauthenticated tracking
+* Tracking information display in customer portal
 
 Version 2.0 Changes:
 --------------------
@@ -42,19 +56,21 @@ Version 2.0 Changes:
     'website': "https://easier.digital/",
     'license': "LGPL-3",
     'category': 'Inventory/Inventory',
-    'version': '18.0.2.0.0',
+    'version': '18.0.2.1.0',
 
-    'depends': ['base', 'web', 'stock', 'product', 'sale', 'website', 'website_sale', 'delivery'],
+    'depends': ['base', 'web', 'stock', 'product', 'sale', 'website', 'website_sale', 'delivery', 'portal', 'mail'],
 
     'data': [
         'security/printful_security.xml',
         'security/ir.model.access.csv',
+        'data/mail_templates.xml',
         'views/printful_sync_queue_views.xml',
         'views/printful_webhook_views.xml',
         'views/product_views.xml',
         'views/sale_views.xml',
         'views/website_views.xml',
         'views/printful_views.xml',
+        'views/portal_templates.xml',
         'data/fetch_product_cron.xml',
     ],
 

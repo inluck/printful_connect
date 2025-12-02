@@ -1,0 +1,350 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        Portal Templates for Printful Order Tracking
+
+        These templates provide customer-facing views for:
+        - Order tracking timeline with visual progress indicator
+        - Shipping carrier and tracking information
+        - Estimated delivery display
+        - Links back to main order page
+    -->
+
+    <!-- Tracking Timeline Snippet - Reusable component -->
+    <template id="tracking_timeline_snippet" name="Printful Tracking Timeline">
+        <div class="printful-timeline">
+            <div class="timeline-track">
+                <t t-foreach="timeline" t-as="step">
+                    <div t-attf-class="timeline-step #{step['completed'] and 'completed' or ''} #{step['active'] and 'active' or ''} #{step['future'] and 'future' or ''}">
+                        <div class="timeline-marker">
+                            <t t-if="step['completed']">
+                                <i class="fa fa-check"></i>
+                            </t>
+                            <t t-elif="step['active']">
+                                <i class="fa fa-circle"></i>
+                            </t>
+                            <t t-else="">
+                                <i class="fa fa-circle-o"></i>
+                            </t>
+                        </div>
+                        <div class="timeline-content">
+                            <span class="timeline-label" t-out="step['label']"/>
+                            <t t-if="step['date']">
+                                <small class="timeline-date text-muted d-block">
+                                    <t t-out="step['date']" t-options="{'widget': 'datetime', 'format': 'MMM d, yyyy'}"/>
+                                </small>
+                            </t>
+                        </div>
+                    </div>
+                </t>
+            </div>
+        </div>
+    </template>
+
+    <!-- Main Order Tracking Page -->
+    <template id="portal_order_tracking" name="Order Tracking">
+        <t t-call="portal.portal_layout">
+            <t t-set="breadcrumbs_searchbar" t-value="False"/>
+            <t t-call="portal.portal_record_layout">
+                <t t-set="card_header">
+                    <div class="row g-0">
+                        <div class="col-12 col-md-6">
+                            <h5 class="mb-0">
+                                <span>Order Tracking: </span>
+                                <span t-field="order.name"/>
+                            </h5>
+                        </div>
+                        <div class="col-12 col-md-6 text-md-end">
+                            <span t-attf-class="badge rounded-pill #{'bg-success' if order.printful_fulfillment_status == 'delivered' else 'bg-primary' if order.printful_fulfillment_status == 'shipped' else 'bg-warning' if order.printful_fulfillment_status == 'in_production' else 'bg-info' if order.printful_fulfillment_status == 'pending' else 'bg-danger'}">
+                                <t t-out="order._get_fulfillment_status_display()"/>
+                            </span>
+                        </div>
+                    </div>
+                </t>
+                <t t-set="card_body">
+                    <!-- Tracking Timeline -->
+                    <section class="mb-4">
+                        <h6 class="text-muted mb-3">Order Progress</h6>
+                        <t t-call="printful_connect.tracking_timeline_snippet">
+                            <t t-set="timeline" t-value="timeline"/>
+                        </t>
+                    </section>
+
+                    <!-- Shipping Information (if shipped) -->
+                    <t t-if="order.printful_fulfillment_status in ('shipped', 'delivered')">
+                        <section class="mb-4">
+                            <h6 class="text-muted mb-3">Shipping Information</h6>
+                            <div class="card bg-light">
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <t t-if="order.printful_tracking_carrier">
+                                                <p class="mb-2">
+                                                    <strong>Carrier:</strong>
+                                                    <span t-field="order.printful_tracking_carrier"/>
+                                                </p>
+                                            </t>
+                                            <t t-if="order.printful_tracking_number">
+                                                <p class="mb-2">
+                                                    <strong>Tracking Number:</strong>
+                                                    <span t-field="order.printful_tracking_number"/>
+                                                </p>
+                                            </t>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <t t-if="order.printful_shipped_at">
+                                                <p class="mb-2">
+                                                    <strong>Shipped:</strong>
+                                                    <span t-field="order.printful_shipped_at" t-options="{'widget': 'datetime', 'format': 'MMM d, yyyy'}"/>
+                                                </p>
+                                            </t>
+                                            <t t-if="order.printful_estimated_delivery">
+                                                <p class="mb-2">
+                                                    <strong>Estimated Delivery:</strong>
+                                                    <span t-field="order.printful_estimated_delivery"/>
+                                                </p>
+                                            </t>
+                                        </div>
+                                    </div>
+                                    <t t-if="order.printful_tracking_url">
+                                        <div class="mt-3">
+                                            <a t-att-href="order.printful_tracking_url"
+                                               target="_blank"
+                                               rel="noopener noreferrer"
+                                               class="btn btn-primary">
+                                                <i class="fa fa-external-link me-1"></i>
+                                                Track Package
+                                            </a>
+                                        </div>
+                                    </t>
+                                </div>
+                            </div>
+                        </section>
+                    </t>
+
+                    <!-- In Production Message -->
+                    <t t-if="order.printful_fulfillment_status == 'in_production'">
+                        <section class="mb-4">
+                            <div class="alert alert-info mb-0">
+                                <i class="fa fa-info-circle me-2"></i>
+                                <strong>Your order is being prepared!</strong>
+                                <p class="mb-0 mt-2">
+                                    We're currently printing and preparing your items.
+                                    You'll receive an email with tracking information once your order ships.
+                                </p>
+                            </div>
+                        </section>
+                    </t>
+
+                    <!-- Pending Message -->
+                    <t t-if="order.printful_fulfillment_status == 'pending'">
+                        <section class="mb-4">
+                            <div class="alert alert-secondary mb-0">
+                                <i class="fa fa-clock-o me-2"></i>
+                                <strong>Order Received</strong>
+                                <p class="mb-0 mt-2">
+                                    We've received your order and it will be processed shortly.
+                                    You'll receive updates as your order progresses.
+                                </p>
+                            </div>
+                        </section>
+                    </t>
+
+                    <!-- Shipping Address -->
+                    <section class="mb-4">
+                        <h6 class="text-muted mb-3">Shipping To</h6>
+                        <address class="mb-0">
+                            <strong t-field="order.partner_shipping_id.name"/><br/>
+                            <t t-if="order.partner_shipping_id.street">
+                                <span t-field="order.partner_shipping_id.street"/><br/>
+                            </t>
+                            <t t-if="order.partner_shipping_id.street2">
+                                <span t-field="order.partner_shipping_id.street2"/><br/>
+                            </t>
+                            <span t-field="order.partner_shipping_id.city"/>,
+                            <t t-if="order.partner_shipping_id.state_id">
+                                <span t-field="order.partner_shipping_id.state_id.code"/>
+                            </t>
+                            <span t-field="order.partner_shipping_id.zip"/><br/>
+                            <span t-field="order.partner_shipping_id.country_id.name"/>
+                        </address>
+                    </section>
+
+                    <!-- Order Summary Link -->
+                    <section>
+                        <a t-attf-href="/my/orders/#{order.id}?access_token=#{access_token}"
+                           class="btn btn-outline-secondary">
+                            <i class="fa fa-arrow-left me-1"></i>
+                            View Full Order Details
+                        </a>
+                    </section>
+                </t>
+            </t>
+        </t>
+    </template>
+
+    <!-- CSS for Timeline (inline for simplicity) -->
+    <template id="portal_tracking_assets" inherit_id="web.assets_frontend" name="Printful Portal Tracking Assets">
+        <xpath expr="." position="inside">
+            <style>
+                .printful-timeline {
+                    padding: 20px 0;
+                }
+                .timeline-track {
+                    display: flex;
+                    justify-content: space-between;
+                    position: relative;
+                }
+                .timeline-track::before {
+                    content: '';
+                    position: absolute;
+                    top: 15px;
+                    left: 0;
+                    right: 0;
+                    height: 3px;
+                    background: #e9ecef;
+                    z-index: 0;
+                }
+                .timeline-step {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    position: relative;
+                    z-index: 1;
+                    flex: 1;
+                }
+                .timeline-marker {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 50%;
+                    background: #e9ecef;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: #6c757d;
+                    font-size: 14px;
+                    margin-bottom: 8px;
+                }
+                .timeline-step.completed .timeline-marker {
+                    background: #28a745;
+                    color: white;
+                }
+                .timeline-step.active .timeline-marker {
+                    background: #007bff;
+                    color: white;
+                    animation: pulse 2s infinite;
+                }
+                .timeline-step.future .timeline-marker {
+                    background: #e9ecef;
+                    color: #adb5bd;
+                }
+                .timeline-content {
+                    text-align: center;
+                }
+                .timeline-label {
+                    font-size: 0.875rem;
+                    font-weight: 500;
+                }
+                .timeline-step.future .timeline-label {
+                    color: #adb5bd;
+                }
+                @keyframes pulse {
+                    0%, 100% { transform: scale(1); }
+                    50% { transform: scale(1.1); }
+                }
+                @media (max-width: 576px) {
+                    .timeline-track {
+                        flex-direction: column;
+                        align-items: flex-start;
+                    }
+                    .timeline-track::before {
+                        top: 0;
+                        bottom: 0;
+                        left: 15px;
+                        right: auto;
+                        width: 3px;
+                        height: auto;
+                    }
+                    .timeline-step {
+                        flex-direction: row;
+                        margin-bottom: 20px;
+                    }
+                    .timeline-marker {
+                        margin-bottom: 0;
+                        margin-right: 15px;
+                    }
+                    .timeline-content {
+                        text-align: left;
+                    }
+                }
+            </style>
+        </xpath>
+    </template>
+
+    <!-- Extend Standard Order Portal Page to Add Tracking Section -->
+    <template id="sale_order_portal_content_printful"
+              inherit_id="sale.sale_order_portal_content"
+              name="Printful Tracking on Order Page">
+        <xpath expr="//section[@id='details']" position="before">
+            <t t-if="sale_order.printful_fulfillment_status">
+                <section id="printful_tracking" class="mt-4">
+                    <h3 class="mb-3">Order Tracking</h3>
+
+                    <!-- Status Badge -->
+                    <div class="mb-3">
+                        <strong>Status: </strong>
+                        <span t-attf-class="badge rounded-pill #{'bg-success' if sale_order.printful_fulfillment_status == 'delivered' else 'bg-primary' if sale_order.printful_fulfillment_status == 'shipped' else 'bg-warning' if sale_order.printful_fulfillment_status == 'in_production' else 'bg-info' if sale_order.printful_fulfillment_status == 'pending' else 'bg-danger'}">
+                            <t t-out="sale_order._get_fulfillment_status_display()"/>
+                        </span>
+                    </div>
+
+                    <!-- Tracking Info Card (if shipped) -->
+                    <t t-if="sale_order.printful_tracking_number">
+                        <div class="card bg-100 mb-3">
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-sm-6">
+                                        <t t-if="sale_order.printful_tracking_carrier">
+                                            <p class="mb-1">
+                                                <strong>Carrier:</strong>
+                                                <span t-field="sale_order.printful_tracking_carrier"/>
+                                            </p>
+                                        </t>
+                                        <p class="mb-1">
+                                            <strong>Tracking:</strong>
+                                            <span t-field="sale_order.printful_tracking_number"/>
+                                        </p>
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <t t-if="sale_order.printful_estimated_delivery">
+                                            <p class="mb-1">
+                                                <strong>Est. Delivery:</strong>
+                                                <span t-field="sale_order.printful_estimated_delivery"/>
+                                            </p>
+                                        </t>
+                                    </div>
+                                </div>
+                                <t t-if="sale_order.printful_tracking_url">
+                                    <a t-att-href="sale_order.printful_tracking_url"
+                                       target="_blank"
+                                       rel="noopener noreferrer"
+                                       class="btn btn-primary btn-sm mt-2">
+                                        <i class="fa fa-external-link"></i> Track Package
+                                    </a>
+                                </t>
+                            </div>
+                        </div>
+                    </t>
+
+                    <!-- View Full Tracking Page Link -->
+                    <a t-attf-href="/my/orders/#{sale_order.id}/tracking?access_token=#{sale_order.access_token}"
+                       class="btn btn-outline-primary btn-sm">
+                        <i class="fa fa-truck"></i> View Full Tracking
+                    </a>
+                </section>
+            </t>
+        </xpath>
+    </template>
+
+</odoo>

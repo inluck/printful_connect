@@ -5,8 +5,114 @@ import logging
 from odoo import fields, http, _
 from odoo.http import request
 from odoo.addons.website_sale.controllers.main import WebsiteSale
+from odoo.addons.portal.controllers.portal import CustomerPortal, pager as portal_pager
+from odoo.exceptions import AccessError, MissingError
 
 _logger = logging.getLogger(__name__)
+
+
+class PrintfulCustomerPortal(CustomerPortal):
+    """
+    Extend the customer portal to show Printful fulfillment tracking.
+
+    This provides customers with:
+    - Order tracking status (pending → in production → shipped → delivered)
+    - Carrier and tracking number with clickable link
+    - Estimated delivery dates
+    - Full order timeline
+    """
+
+    def _prepare_home_portal_values(self, counters):
+        """Add Printful-specific counters to portal home if needed."""
+        values = super()._prepare_home_portal_values(counters)
+        return values
+
+    @http.route(
+        ['/my/orders/<int:order_id>/tracking'],
+        type='http',
+        auth='public',
+        website=True,
+    )
+    def portal_order_tracking(self, order_id, access_token=None, **kw):
+        """
+        Dedicated tracking page for Printful orders.
+
+        Accessible via:
+        - Authenticated portal users (their own orders)
+        - Public access with valid access_token (from email links)
+
+        Args:
+            order_id: The sale.order ID
+            access_token: Optional token for unauthenticated access
+
+        Returns:
+            Rendered tracking page or error
+        """
+        try:
+            order_sudo = self._document_check_access(
+                'sale.order', order_id, access_token=access_token
+            )
+        except (AccessError, MissingError):
+            return request.redirect('/my')
+
+        # Build tracking timeline based on fulfillment status
+        timeline = self._build_fulfillment_timeline(order_sudo)
+
+        values = {
+            'order': order_sudo,
+            'timeline': timeline,
+            'page_name': 'order_tracking',
+            'access_token': access_token,
+        }
+
+        return request.render(
+            'printful_connect.portal_order_tracking',
+            values
+        )
+
+    def _build_fulfillment_timeline(self, order):
+        """
+        Build a timeline of fulfillment events for the order.
+
+        Args:
+            order: sale.order record
+
+        Returns:
+            List of timeline event dicts with status, label, date, and active flag
+        """
+        status = order.printful_fulfillment_status or 'pending'
+
+        # Define the standard fulfillment flow
+        steps = [
+            ('pending', _('Order Received'), order.date_order),
+            ('in_production', _('In Production'), None),
+            ('shipped', _('Shipped'), order.printful_shipped_at),
+            ('delivered', _('Delivered'), None),
+        ]
+
+        # Map status to step index
+        status_order = ['pending', 'in_production', 'shipped', 'delivered']
+
+        # Handle special statuses
+        if status in ('canceled', 'failed', 'returned'):
+            # Add special status at the end
+            steps.append((status, order._get_fulfillment_status_display(), None))
+            current_index = len(steps) - 1
+        else:
+            current_index = status_order.index(status) if status in status_order else 0
+
+        timeline = []
+        for i, (step_status, label, date) in enumerate(steps):
+            timeline.append({
+                'status': step_status,
+                'label': label,
+                'date': date,
+                'completed': i < current_index,
+                'active': i == current_index,
+                'future': i > current_index,
+            })
+
+        return timeline
 
 
 class WebsiteSalePrintful(WebsiteSale):

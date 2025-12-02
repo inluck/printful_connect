@@ -337,7 +337,7 @@ class PrintfulWebhookEvent(models.Model):
         self._update_sale_order_from_payload(order_data)
 
     def _handle_order_failed(self, payload):
-        """Handle order_failed event - log failure."""
+        """Handle order_failed event - log failure and notify customer."""
         order_data = payload.get('data', {}).get('order', {})
         sale_order = self._find_sale_order(order_data)
 
@@ -345,7 +345,7 @@ class PrintfulWebhookEvent(models.Model):
             self.sale_order_id = sale_order.id
             # Update fulfillment status
             sale_order.write({'printful_fulfillment_status': 'failed'})
-            # Add note about failure
+            # Add internal note about failure
             failure_reason = order_data.get('error_message', 'Unknown reason')
             sale_order.message_post(
                 body=_("❌ Printful order failed: %s") % failure_reason,
@@ -355,9 +355,11 @@ class PrintfulWebhookEvent(models.Model):
                 "Printful order failed for %s: %s",
                 sale_order.name, failure_reason
             )
+            # Send customer notification
+            self._send_customer_email(sale_order, 'printful_connect.mail_template_printful_issue')
 
     def _handle_order_canceled(self, payload):
-        """Handle order_canceled event."""
+        """Handle order_canceled event and notify customer."""
         order_data = payload.get('data', {}).get('order', {})
         sale_order = self._find_sale_order(order_data)
 
@@ -369,6 +371,8 @@ class PrintfulWebhookEvent(models.Model):
                 message_type='notification',
             )
             _logger.info("Order canceled event for %s", sale_order.name)
+            # Send customer notification
+            self._send_customer_email(sale_order, 'printful_connect.mail_template_printful_issue')
 
     def _handle_package_shipped(self, payload):
         """Handle package_shipped event - update tracking info."""
@@ -441,9 +445,11 @@ class PrintfulWebhookEvent(models.Model):
                 "Package shipped for order %s - Tracking: %s",
                 sale_order.name, tracking_number
             )
+            # Send customer notification with tracking info
+            self._send_customer_email(sale_order, 'printful_connect.mail_template_printful_shipped')
 
     def _handle_package_returned(self, payload):
-        """Handle package_returned event."""
+        """Handle package_returned event and notify customer."""
         order_data = payload.get('data', {}).get('order', {})
         sale_order = self._find_sale_order(order_data)
 
@@ -455,6 +461,9 @@ class PrintfulWebhookEvent(models.Model):
                 body=_("↩️ Package returned: %s") % return_reason,
                 message_type='notification',
             )
+            _logger.info("Package returned for order %s: %s", sale_order.name, return_reason)
+            # Send customer notification
+            self._send_customer_email(sale_order, 'printful_connect.mail_template_printful_returned')
 
     def _handle_product_synced(self, payload):
         """Handle product_synced event."""
@@ -549,8 +558,65 @@ class PrintfulWebhookEvent(models.Model):
 
         return None
 
+    def _send_customer_email(self, sale_order, template_xmlid):
+        """
+        Send a customer notification email using the specified template.
+
+        This method is the heart of the webhook-driven email state machine.
+        Each state transition triggers the appropriate customer-friendly email
+        with portal links for tracking.
+
+        Args:
+            sale_order: The sale.order record to send email about
+            template_xmlid: The XML ID of the mail.template to use
+
+        Note:
+            - Emails are sent asynchronously to avoid blocking webhook processing
+            - Template must exist or sending is silently skipped with warning
+            - Customer's email address must be set on partner
+        """
+        if not sale_order.partner_id.email:
+            _logger.warning(
+                "Cannot send customer email for order %s: no customer email",
+                sale_order.name
+            )
+            return
+
+        try:
+            template = self.env.ref(template_xmlid, raise_if_not_found=False)
+            if not template:
+                _logger.warning(
+                    "Email template %s not found, skipping customer notification",
+                    template_xmlid
+                )
+                return
+
+            # Send email with force_send=False to use mail queue
+            # This prevents webhook timeouts on slow mail servers
+            template.send_mail(
+                sale_order.id,
+                force_send=False,
+                raise_exception=False,
+            )
+            _logger.info(
+                "Queued customer email '%s' for order %s to %s",
+                template.name, sale_order.name, sale_order.partner_id.email
+            )
+        except Exception as e:
+            # Log but don't fail - customer email is not critical path
+            _logger.exception(
+                "Failed to send customer email for order %s: %s",
+                sale_order.name, str(e)
+            )
+
     def _update_sale_order_from_payload(self, order_data):
-        """Update sale order with data from webhook payload."""
+        """
+        Update sale order with data from webhook payload.
+
+        This method also detects status transitions and triggers
+        appropriate customer email notifications as part of the
+        webhook-driven state machine.
+        """
         sale_order = self._find_sale_order(order_data)
 
         if not sale_order:
@@ -574,12 +640,104 @@ class PrintfulWebhookEvent(models.Model):
                 'order_total': costs.get('total', sale_order.order_total),
             })
 
-        # Update status info
+        # Map Printful status to our fulfillment status
         status = order_data.get('status', '')
         if status:
-            sale_order.message_post(
-                body=_("Printful order status updated: %s") % status,
-                message_type='notification',
+            old_status = sale_order.printful_fulfillment_status
+            new_status = self._map_printful_status(status)
+
+            # Update status and post internal message
+            if new_status and new_status != old_status:
+                sale_order.write({'printful_fulfillment_status': new_status})
+                sale_order.message_post(
+                    body=_("Printful order status updated: %s → %s") % (
+                        old_status or 'none', new_status
+                    ),
+                    message_type='notification',
+                )
+
+                # Trigger customer email based on status transition
+                self._notify_customer_on_status_change(sale_order, old_status, new_status)
+            else:
+                # Status didn't change, just log it
+                sale_order.message_post(
+                    body=_("Printful order status: %s") % status,
+                    message_type='notification',
+                )
+
+    def _map_printful_status(self, printful_status):
+        """
+        Map Printful API status to our fulfillment status selection.
+
+        Args:
+            printful_status: Status string from Printful API
+
+        Returns:
+            Our internal fulfillment status or None if no mapping
+        """
+        # Printful status values from API
+        status_mapping = {
+            'draft': 'pending',
+            'pending': 'pending',
+            'failed': 'failed',
+            'canceled': 'canceled',
+            'inprocess': 'in_production',
+            'in_process': 'in_production',
+            'onhold': 'pending',
+            'on_hold': 'pending',
+            'partial': 'in_production',
+            'fulfilled': 'shipped',
+            'shipped': 'shipped',
+            'delivered': 'delivered',
+            'returned': 'returned',
+        }
+        return status_mapping.get(printful_status.lower().replace('-', '_'))
+
+    def _notify_customer_on_status_change(self, sale_order, old_status, new_status):
+        """
+        Send customer email notification based on status transition.
+
+        This is the state machine dispatcher - each transition maps
+        to a specific customer-friendly email template.
+
+        Args:
+            sale_order: The sale.order record
+            old_status: Previous fulfillment status
+            new_status: New fulfillment status
+        """
+        # Define which transitions trigger emails
+        # (from_status, to_status) -> template_xmlid
+        transition_templates = {
+            # Enter production - exciting update!
+            ('pending', 'in_production'): 'printful_connect.mail_template_printful_in_production',
+            # Shipped - most important email with tracking
+            ('in_production', 'shipped'): 'printful_connect.mail_template_printful_shipped',
+            ('pending', 'shipped'): 'printful_connect.mail_template_printful_shipped',
+            # Delivered - order complete
+            ('shipped', 'delivered'): 'printful_connect.mail_template_printful_delivered',
+            # Problem states
+            ('pending', 'failed'): 'printful_connect.mail_template_printful_issue',
+            ('in_production', 'failed'): 'printful_connect.mail_template_printful_issue',
+            ('pending', 'canceled'): 'printful_connect.mail_template_printful_issue',
+            ('in_production', 'canceled'): 'printful_connect.mail_template_printful_issue',
+            # Returned
+            ('shipped', 'returned'): 'printful_connect.mail_template_printful_returned',
+            ('delivered', 'returned'): 'printful_connect.mail_template_printful_returned',
+        }
+
+        # Look up template for this transition
+        template_xmlid = transition_templates.get((old_status, new_status))
+
+        if template_xmlid:
+            _logger.info(
+                "Status transition %s → %s triggers email for order %s",
+                old_status, new_status, sale_order.name
+            )
+            self._send_customer_email(sale_order, template_xmlid)
+        else:
+            _logger.debug(
+                "No email template for transition %s → %s",
+                old_status, new_status
             )
 
     @api.model
