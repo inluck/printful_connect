@@ -1,5 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+    <!-- Estimated Delivery on Product Page -->
+    <template id="s_estimated_delivery" name="Estimated Delivery" inherit_id="website_sale.product" customize_show="True">
+        <xpath expr="//div[@id='product_details']//div[hasclass('js_product')]" position="inside">
+            <div class="estimated-delivery mt-3" t-if="product.printful_shipping">
+                <span class="text-muted">
+                    <i class="fa fa-truck me-1" role="img" aria-label="Shipping"/>
+                    Estimated Delivery: <strong t-out="product.printful_shipping"/>
+                </span>
+            </div>
+        </xpath>
+    </template>
+
     <!-- Size Guide Section on Product Page -->
     <template id="s_size_guide" name="Size Guide" inherit_id="website_sale.product" customize_show="True">
         <xpath expr="//div[@id='product_full_description']" position="after">
