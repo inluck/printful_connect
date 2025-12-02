@@ -64,6 +64,99 @@ class SaleOrder(models.Model):
         for rec in self:
             rec._push_to_printful()
 
+    def action_confirm(self):
+        """
+        Override order confirmation to automatically push to Printful when enabled.
+
+        The auto-fulfillment feature:
+        - Only triggers if auto_fulfill_orders is enabled in Printful config
+        - Only processes orders containing Printful products
+        - Silently skips orders that fail validation (logs warning instead of blocking)
+        - Does not block order confirmation even if Printful push fails
+        """
+        # First, complete the standard confirmation
+        result = super().action_confirm()
+
+        # Check if auto-fulfillment is enabled
+        printful_config = self.env['printful.printful'].search([], limit=1)
+        if not printful_config or not printful_config.auto_fulfill_orders:
+            return result
+
+        if not printful_config.token:
+            _logger.warning(
+                "Auto-fulfillment enabled but Printful API token not configured"
+            )
+            return result
+
+        # Process each confirmed order
+        for order in self:
+            # Skip if already pushed to Printful
+            if order.order_external_ref:
+                _logger.debug(
+                    "Order %s already pushed to Printful, skipping auto-fulfill",
+                    order.name
+                )
+                continue
+
+            # Check if order contains any Printful products
+            has_printful_products = any(
+                line.product_id and line.product_id.printful_variant_ref
+                for line in order.order_line
+                if not (
+                    getattr(line.product_id, 'is_delivery_product', False) or
+                    (line.product_id.type == 'service' and
+                     any(kw in (line.name or '').lower()
+                         for kw in ['delivery', 'shipping']))
+                )
+            )
+
+            if not has_printful_products:
+                _logger.debug(
+                    "Order %s has no Printful products, skipping auto-fulfill",
+                    order.name
+                )
+                continue
+
+            # Attempt to push order to Printful
+            try:
+                order._push_to_printful()
+                _logger.info(
+                    "Auto-fulfilled order %s to Printful (External ID: %s)",
+                    order.name, order.order_external_ref
+                )
+            except UserError as e:
+                # Log validation failures but don't block order confirmation
+                _logger.warning(
+                    "Auto-fulfillment failed for order %s: %s. "
+                    "Order can be pushed manually.",
+                    order.name, str(e)
+                )
+                # Post a message to the order chatter for visibility
+                order.message_post(
+                    body=_(
+                        "⚠️ Auto-fulfillment to Printful failed: %s\n\n"
+                        "You can push this order manually using the "
+                        "'Push Order to Printful' button."
+                    ) % str(e),
+                    message_type='notification',
+                )
+            except Exception as e:
+                # Log unexpected errors but don't block order confirmation
+                _logger.exception(
+                    "Unexpected error during auto-fulfillment of order %s",
+                    order.name
+                )
+                order.message_post(
+                    body=_(
+                        "⚠️ Auto-fulfillment to Printful encountered an error: %s\n\n"
+                        "You can push this order manually using the "
+                        "'Push Order to Printful' button."
+                    ) % str(e),
+                    message_type='notification',
+                )
+
+        return result
+
     def _validate_order_for_printful(self):
         """
         Validate that the order has all required fields for Printful.

@@ -54,10 +54,19 @@
                                 </group>
                             </group>
                             <group>
+                                <group string="Order Fulfillment">
+                                    <field name="auto_fulfill_orders"/>
+                                    <div colspan="2" class="text-muted small" invisible="not auto_fulfill_orders">
+                                        When enabled, orders containing Printful products will be automatically
+                                        sent to Printful for fulfillment upon confirmation.
+                                    </div>
+                                </group>
                                 <group string="Defaults">
                                     <field name="product_public_category_id"/>
                                     <field name="multiple_product_images"/>
                                 </group>
+                            </group>
+                            <group>
                                 <group string="Legacy Shipping">
                                     <field name="default_shipping_country_id" options="{'no_create': True}"/>
                                     <field name="shipping_cache_ttl"/>

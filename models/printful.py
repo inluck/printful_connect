@@ -186,6 +186,15 @@ class PrintfulPrintful(models.Model):
         help="How long to cache shipping rate calculations (in minutes)",
     )
 
+    # Auto-fulfillment settings
+    auto_fulfill_orders = fields.Boolean(
+        string="Auto-fulfill Orders",
+        default=False,
+        help="Automatically push orders to Printful when they are confirmed. "
+             "Orders containing Printful products will be sent for fulfillment "
+             "without requiring manual intervention.",
+    )
+
     @api.depends('shipping_method_ids', 'shipping_method_ids.is_default')
     def _compute_default_shipping_method(self):
         """Get the default shipping method for this configuration."""
