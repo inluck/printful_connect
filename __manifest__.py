@@ -78,6 +78,9 @@ Version 2.0 Changes:
         'web.assets_backend': [
             'printful_connect/static/src/css/sync_queue.css',
         ],
+        'web.assets_frontend': [
+            'printful_connect/static/src/css/portal_tracking.css',
+        ],
     },
 
     'installable': True,
