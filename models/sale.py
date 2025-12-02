@@ -395,7 +395,20 @@ class SaleOrder(models.Model):
             data=json.dumps(order_data),
             timeout=PRINTFUL_API_TIMEOUT
         )
-        result = response.json()
+
+        # Validate response before parsing JSON
+        # Non-2xx responses might return HTML error pages
+        try:
+            result = response.json()
+        except (json.JSONDecodeError, requests.exceptions.JSONDecodeError) as e:
+            _logger.error(
+                "Printful API returned non-JSON response (status %d): %s",
+                response.status_code, response.text[:500]
+            )
+            raise UserError(_(
+                'Printful API returned an invalid response (HTTP %d). '
+                'The service may be temporarily unavailable. Please try again later.'
+            ) % response.status_code)
 
         if result.get('code') != 200:
             _logger.error("Printful order creation failed: %s", result)
@@ -427,7 +440,19 @@ class SaleOrder(models.Model):
             headers=headers,
             timeout=PRINTFUL_API_TIMEOUT
         )
-        result = response.json()
+
+        # Validate response before parsing JSON
+        try:
+            result = response.json()
+        except (json.JSONDecodeError, requests.exceptions.JSONDecodeError):
+            _logger.error(
+                "Printful confirmation API returned non-JSON response (status %d): %s",
+                response.status_code, response.text[:500]
+            )
+            raise UserError(_(
+                'Printful API returned an invalid response during order confirmation (HTTP %d). '
+                'Please check Printful dashboard to verify order status. External ID: %s'
+            ) % (response.status_code, external_id))
 
         if result.get('code') != 200:
             _logger.error(

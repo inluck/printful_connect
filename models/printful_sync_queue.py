@@ -338,7 +338,9 @@ class PrintfulSyncQueue(models.Model):
         Returns:
             Number of queues recovered
         """
-        stale_threshold = datetime.now() - timedelta(minutes=stale_timeout_minutes)
+        # Use Odoo's fields.Datetime.now() for UTC consistency
+        # datetime.now() is timezone-naive local time, but Odoo stores in UTC
+        stale_threshold = fields.Datetime.now() - timedelta(minutes=stale_timeout_minutes)
 
         # Find queues that have been running for too long
         stale_queues = self.search([

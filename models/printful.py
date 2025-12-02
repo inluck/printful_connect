@@ -463,8 +463,19 @@ class PrintfulPrintful(models.Model):
 
         # Calculate lowest price for base price using Decimal for precision
         # This avoids float precision issues (e.g., 19.99 + 5.00 != 24.99 in float)
+        # Handle None values explicitly - API might return null for retail_price
+        def safe_decimal_price(price_val):
+            """Convert price to Decimal, treating None/invalid as 0."""
+            if price_val is None:
+                return Decimal('0')
+            try:
+                return Decimal(str(price_val))
+            except Exception:
+                _logger.warning("Invalid price value %r, using 0", price_val)
+                return Decimal('0')
+
         lowest_price = min(
-            Decimal(str(sv.get('retail_price', 0)))
+            safe_decimal_price(sv.get('retail_price'))
             for sv in sync_variants
         ) if sync_variants else Decimal('0')
 
@@ -698,7 +709,17 @@ class PrintfulPrintful(models.Model):
         result['color'] = color_value
 
         # Calculate price using Decimal for precision
-        retail_price = Decimal(str(sync_variant.get('retail_price', 0)))
+        # Handle None values - API might return null for retail_price
+        raw_price = sync_variant.get('retail_price')
+        if raw_price is None:
+            _logger.warning("Variant %s has null retail_price, using 0", variant_id)
+            raw_price = 0
+        try:
+            retail_price = Decimal(str(raw_price))
+        except Exception:
+            _logger.warning("Variant %s has invalid retail_price %r, using 0", variant_id, raw_price)
+            retail_price = Decimal('0')
+
         price_extra = float((retail_price - lowest_price).quantize(
             Decimal('0.01'), rounding=ROUND_HALF_UP
         ))
@@ -1075,7 +1096,17 @@ class PrintfulPrintful(models.Model):
                     cat_data = cat_response.json()
 
                     if cat_data.get('code') == 200:
-                        cat_info = cat_data['result']['category']
+                        # Safely access nested category data
+                        cat_result = cat_data.get('result', {})
+                        cat_info = cat_result.get('category', {})
+                        if not cat_info:
+                            _logger.warning(
+                                "Category API returned empty category for ID %s",
+                                main_category_id
+                            )
+                            category_cache[main_category_id] = None
+                            continue
+
                         cat_id = self._get_or_create_category(
                             cat_info.get('title'),
                             cat_info.get('image_url'),
