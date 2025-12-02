@@ -1543,6 +1543,157 @@ class PrintfulPrintful(models.Model):
             response.raise_for_status()
             return response
 
+    def _make_api_delete_request(self, url, headers, timeout=30, max_retries=3):
+        """
+        Make a rate-limited API DELETE request using leaky bucket algorithm.
+
+        Args:
+            url: API endpoint URL
+            headers: Request headers (including auth)
+            timeout: Request timeout in seconds
+            max_retries: Maximum number of retry attempts for rate limiting (default: 3)
+
+        Returns:
+            requests.Response object
+
+        Raises:
+            requests.exceptions.HTTPError: If rate limit retries exhausted or other HTTP error
+        """
+        config = self
+        retry_count = 0
+
+        while True:
+            if config.token:
+                limiter = config._get_rate_limiter()
+                limiter.acquire()
+
+            response = requests.delete(url, headers=headers, timeout=timeout)
+
+            # Update rate limiter from response headers
+            if config.token:
+                limiter.update_from_headers(response.headers)
+
+            if response.status_code == 429:
+                retry_count += 1
+                if retry_count > max_retries:
+                    _logger.error(
+                        "Rate limit retries exhausted (%d/%d) for DELETE URL: %s",
+                        retry_count, max_retries, url
+                    )
+                    response.raise_for_status()  # Will raise HTTPError
+
+                # Rate limited - wait and retry
+                retry_after = int(response.headers.get('Retry-After', 5))
+                _logger.warning(
+                    "Rate limited. Waiting %d seconds before retry (%d/%d).",
+                    retry_after, retry_count, max_retries
+                )
+                time.sleep(retry_after)
+                continue  # Retry the loop
+
+            # 204 No Content is success for DELETE
+            if response.status_code not in (200, 204):
+                response.raise_for_status()
+            return response
+
+    # ==========================================
+    # WEBHOOK API METHODS (v2)
+    # ==========================================
+
+    def get_webhook_configuration(self):
+        """
+        Get current webhook configuration from Printful API.
+
+        Returns:
+            dict with webhook config or None if not configured
+        """
+        self.ensure_one()
+        headers = self._get_auth_headers()
+        url = f"{PRINTFUL_API_V2_BASE}/webhooks"
+
+        try:
+            response = self._make_api_request(url, headers)
+            result = response.json()
+
+            if result.get('code') == 200:
+                return result.get('result', {})
+            else:
+                _logger.warning("Failed to get webhook config: %s", result)
+                return None
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                # No webhook configured
+                return None
+            raise
+
+    def setup_webhooks(self, webhook_url, events, expires_at=None):
+        """
+        Configure webhooks in Printful using the API.
+
+        Args:
+            webhook_url: HTTPS URL to receive webhook notifications
+            events: List of event type strings to subscribe to
+            expires_at: Optional datetime when config should expire
+
+        Returns:
+            dict with webhook config including secret_key and public_key
+        """
+        self.ensure_one()
+        headers = self._get_auth_headers()
+        url = f"{PRINTFUL_API_V2_BASE}/webhooks"
+
+        # Build events configuration
+        event_configs = []
+        for event_type in events:
+            event_configs.append({
+                "type": event_type,
+            })
+
+        payload = {
+            "default_url": webhook_url,
+            "events": event_configs,
+        }
+
+        if expires_at:
+            # Format as ISO 8601
+            payload["expires_at"] = expires_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        response = self._make_api_post_request(url, headers, payload)
+        result = response.json()
+
+        if result.get('code') == 200:
+            _logger.info(
+                "Successfully configured webhooks for store %s at URL: %s",
+                self.name, webhook_url
+            )
+            return result.get('result', {})
+        else:
+            error_msg = result.get('error', {}).get('message', 'Unknown error')
+            raise UserError(_(
+                'Failed to configure webhooks: %s'
+            ) % error_msg)
+
+    def disable_webhooks(self):
+        """
+        Remove webhook configuration from Printful.
+
+        Returns:
+            True if successful
+        """
+        self.ensure_one()
+        headers = self._get_auth_headers()
+        url = f"{PRINTFUL_API_V2_BASE}/webhooks"
+
+        try:
+            self._make_api_delete_request(url, headers)
+            _logger.info("Successfully disabled webhooks for store %s", self.name)
+            return True
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                # Already disabled
+                return True
+            raise
+
     # ==========================================
     # V2 SHIPPING RATE METHODS
     # ==========================================
