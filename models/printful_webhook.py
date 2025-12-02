@@ -4,6 +4,7 @@ import hmac
 import json
 import logging
 from datetime import datetime, timedelta
+from markupsafe import Markup, escape as html_escape
 
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
@@ -411,16 +412,24 @@ class PrintfulWebhookEvent(models.Model):
             if shipped_at:
                 update_vals['printful_shipped_at'] = shipped_at
 
-            # Build tracking message
-            tracking_msg = _("<strong>📦 Package Shipped!</strong><br/>")
+            # Build tracking message with XSS protection
+            # All external data must be escaped before embedding in HTML
+            tracking_msg = Markup("<strong>📦 Package Shipped!</strong><br/>")
             if carrier:
-                tracking_msg += _("Carrier: %s<br/>") % carrier
+                tracking_msg += Markup("Carrier: %s<br/>") % html_escape(carrier)
             if tracking_number:
-                tracking_msg += _("Tracking Number: %s<br/>") % tracking_number
+                tracking_msg += Markup("Tracking Number: %s<br/>") % html_escape(tracking_number)
             if tracking_url:
-                tracking_msg += _('<a href="%s" target="_blank">🔗 Track Package</a><br/>') % tracking_url
+                # Validate URL scheme to prevent javascript: URLs
+                safe_url = tracking_url if tracking_url.startswith(('http://', 'https://')) else '#'
+                if safe_url == '#':
+                    _logger.warning(
+                        "SECURITY: Rejected potentially malicious tracking URL: %s",
+                        tracking_url[:50]
+                    )
+                tracking_msg += Markup('<a href="%s" target="_blank" rel="noopener noreferrer">🔗 Track Package</a><br/>') % html_escape(safe_url)
             if estimated_delivery:
-                tracking_msg += _("Estimated Delivery: %s") % estimated_delivery
+                tracking_msg += Markup("Estimated Delivery: %s") % html_escape(estimated_delivery)
 
             sale_order.write(update_vals)
             sale_order.message_post(

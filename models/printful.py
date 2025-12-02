@@ -1256,19 +1256,34 @@ class PrintfulPrintful(models.Model):
 
         # If no existing customer found, create a new one
         if not customer:
+            # Look up country by code
+            country_code = recipient.get('country_code', '')
+            country = self.env['res.country'].search([
+                ('code', '=', country_code.upper())
+            ], limit=1) if country_code else False
+
+            # Look up state by code (requires country)
+            state_code = recipient.get('state_code', '')
+            state = False
+            if state_code and country:
+                state = self.env['res.country.state'].search([
+                    ('code', '=', state_code.upper()),
+                    ('country_id', '=', country.id)
+                ], limit=1)
+                # Try with original case if not found
+                if not state:
+                    state = self.env['res.country.state'].search([
+                        ('code', '=', state_code),
+                        ('country_id', '=', country.id)
+                    ], limit=1)
+
             customer_vals = {
                 'name': recipient.get('name') or "Printful Customer",
+                'street': recipient.get('address1', ''),
+                'street2': recipient.get('address2', ''),
                 'city': recipient.get('city', ''),
-                'street': ' '.join(filter(None, [
-                    recipient.get('address1', ''),
-                    recipient.get('address2', ''),
-                    recipient.get('state_code', ''),
-                ])),
-                'street2': ' '.join(filter(None, [
-                    recipient.get('country_name', ''),
-                    recipient.get('state_name', ''),
-                    recipient.get('country_code', ''),
-                ])),
+                'state_id': state.id if state else False,
+                'country_id': country.id if country else False,
                 'zip': recipient.get('zip', ''),
                 'email': recipient.get('email', ''),
                 'phone': recipient.get('phone', ''),
@@ -1282,11 +1297,15 @@ class PrintfulPrintful(models.Model):
             _logger.info("Using existing customer '%s' (ID: %d) for Printful order %s",
                         customer.name, customer.id, order_ref)
 
-        # Create order lines
+        # Create order lines - track skipped items for audit
         lines = []
+        skipped_items = []
+        total_items = len(order.get('items', []))
+
         for item in order.get('items', []):
+            external_variant_id = str(item.get('external_variant_id', ''))
             product = self.env['product.product'].search([
-                ('printful_variant_ref', '=', str(item.get('external_variant_id')))
+                ('printful_variant_ref', '=', external_variant_id)
             ], limit=1)
 
             if product:
@@ -1297,6 +1316,28 @@ class PrintfulPrintful(models.Model):
                     'product_uom_qty': item.get('quantity', 1),
                     'tax_id': None,
                 }))
+            else:
+                # Track skipped item for logging and notification
+                skipped_items.append({
+                    'name': item.get('name', 'Unknown'),
+                    'external_variant_id': external_variant_id,
+                    'sku': item.get('sku', ''),
+                    'quantity': item.get('quantity', 1),
+                    'price': item.get('price', 0),
+                })
+                _logger.warning(
+                    "Order %s: Product with external_variant_id '%s' (SKU: %s) "
+                    "not found in Odoo. Item will be skipped.",
+                    order_ref, external_variant_id, item.get('sku', 'N/A')
+                )
+
+        # Validate we have at least some items
+        if not lines and total_items > 0:
+            _logger.error(
+                "Order %s: All %d items were skipped (products not found). "
+                "Order will be created empty.",
+                order_ref, total_items
+            )
 
         # Create sale order
         costs = order.get('costs', {})
@@ -1329,7 +1370,31 @@ class PrintfulPrintful(models.Model):
             'order_line': lines,
         }
 
-        return SaleOrder.create(so_vals)
+        sale_order = SaleOrder.create(so_vals)
+
+        # Post notification if items were skipped
+        if skipped_items:
+            skipped_msg = _(
+                "⚠️ <strong>Warning: %d of %d items could not be imported</strong><br/><br/>"
+                "The following products were not found in Odoo and were skipped:<br/>"
+            ) % (len(skipped_items), total_items)
+
+            for item in skipped_items:
+                skipped_msg += _(
+                    "• %s (SKU: %s, Qty: %d, Price: %s)<br/>"
+                ) % (item['name'], item['sku'] or 'N/A', item['quantity'], item['price'])
+
+            skipped_msg += _(
+                "<br/>Please sync products from Printful and manually add "
+                "missing items to this order if needed."
+            )
+
+            sale_order.message_post(
+                body=skipped_msg,
+                message_type='notification',
+            )
+
+        return sale_order
 
     # ==========================================
     # API HELPERS
