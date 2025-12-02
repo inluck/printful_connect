@@ -26,14 +26,14 @@
                                 type="action"
                                 class="oe_stat_button"
                                 icon="fa-refresh"
-                                context="{'search_default_printful_config_id': active_id}">
+                                context="{'search_default_printful_config_id': id}">
                             <field name="sync_queue_ids" widget="statinfo" string="Sync Queues"/>
                         </button>
                         <button name="%(printful_webhook_event_action)d"
                                 type="action"
                                 class="oe_stat_button"
                                 icon="fa-bell"
-                                context="{'search_default_printful_config_id': active_id}">
+                                context="{'search_default_printful_config_id': id}">
                             <span class="o_stat_text">Webhook Events</span>
                         </button>
                     </div>
