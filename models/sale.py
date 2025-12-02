@@ -17,8 +17,47 @@ PRINTFUL_API_TIMEOUT = 30  # seconds
 class SaleOrder(models.Model):
     """
     Extension of sale.order to handle Printful order synchronization.
+
+    Inherits portal.mixin to enable customer portal access with secure tokens.
+    This allows customers to track their Printful orders via portal links.
     """
-    _inherit = 'sale.order'
+    _inherit = ['sale.order', 'portal.mixin']
+    _name = 'sale.order'
+
+    def _compute_access_url(self):
+        """Compute the portal access URL for orders."""
+        super()._compute_access_url()
+        for order in self:
+            order.access_url = f'/my/orders/{order.id}'
+
+    def _get_printful_portal_url(self):
+        """
+        Get the portal URL with access token for customer emails.
+
+        Returns:
+            str: Full URL with access token for unauthenticated access
+        """
+        self.ensure_one()
+        return self._get_share_url()
+
+    def _get_fulfillment_status_display(self):
+        """
+        Get customer-friendly fulfillment status text.
+
+        Returns:
+            str: Human-readable status for customer display
+        """
+        self.ensure_one()
+        status_labels = {
+            'pending': _('Order Received'),
+            'in_production': _('Being Prepared'),
+            'shipped': _('Shipped'),
+            'delivered': _('Delivered'),
+            'returned': _('Returned'),
+            'canceled': _('Canceled'),
+            'failed': _('Issue with Order'),
+        }
+        return status_labels.get(self.printful_fulfillment_status, _('Processing'))
 
     # Printful order references
     order_ref = fields.Char(
