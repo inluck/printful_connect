@@ -110,18 +110,28 @@ class PrintfulWebhook(models.Model):
 
         Returns:
             True if signature is valid, False otherwise
+
+        Security Note:
+            This method requires a webhook secret to be configured.
+            Webhooks without secrets will be rejected to prevent
+            unauthorized access to order/product manipulation endpoints.
         """
         self.ensure_one()
 
         if not self.webhook_secret:
-            _logger.warning(
-                "Webhook %s has no secret configured. Skipping signature validation.",
+            _logger.error(
+                "SECURITY: Webhook %s has no secret configured. "
+                "Rejecting request. Please configure a webhook secret in Printful "
+                "dashboard and update this webhook configuration.",
                 self.name
             )
-            return True  # Allow if no secret configured (not recommended for production)
+            return False  # Reject webhooks without secret for security
 
         if not signature:
-            _logger.warning("No signature provided for webhook %s", self.name)
+            _logger.warning(
+                "SECURITY: No signature provided for webhook %s. Rejecting request.",
+                self.name
+            )
             return False
 
         # Calculate expected signature
@@ -132,7 +142,16 @@ class PrintfulWebhook(models.Model):
         ).hexdigest()
 
         # Compare signatures (timing-safe comparison)
-        return hmac.compare_digest(expected, signature)
+        is_valid = hmac.compare_digest(expected, signature)
+
+        if not is_valid:
+            _logger.warning(
+                "SECURITY: Invalid signature for webhook %s. "
+                "Expected: %s..., Got: %s...",
+                self.name, expected[:8], signature[:8] if signature else 'None'
+            )
+
+        return is_valid
 
     def get_subscribed_events(self):
         """

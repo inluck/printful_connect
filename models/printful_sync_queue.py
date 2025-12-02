@@ -215,14 +215,53 @@ class PrintfulSyncQueue(models.Model):
             }
 
     def action_process_next_batch(self, batch_size=5):
-        """Process next batch of items. Called by cron or manually."""
+        """
+        Process next batch of items. Called by cron or manually.
+
+        Uses database-level locking to prevent concurrent cron jobs from
+        processing the same items simultaneously.
+        """
         self.ensure_one()
         if self.state != 'running':
             return False
 
-        pending_items = self.item_ids.filtered(
-            lambda x: x.state == 'pending'
-        )[:batch_size]
+        # Use raw SQL with FOR UPDATE SKIP LOCKED to safely select items
+        # that aren't being processed by another transaction
+        self.env.cr.execute("""
+            SELECT id FROM printful_sync_queue_item
+            WHERE queue_id = %s AND state = 'pending'
+            ORDER BY sequence, id
+            LIMIT %s
+            FOR UPDATE SKIP LOCKED
+        """, (self.id, batch_size))
+
+        item_ids = [row[0] for row in self.env.cr.fetchall()]
+
+        if not item_ids:
+            # No items available (either none pending or all locked by other transactions)
+            # Check if queue is actually complete
+            remaining_count = self.env.cr.execute("""
+                SELECT COUNT(*) FROM printful_sync_queue_item
+                WHERE queue_id = %s AND state = 'pending'
+            """, (self.id,))
+            remaining = self.env.cr.fetchone()[0]
+
+            if remaining == 0:
+                self.write({
+                    'state': 'done' if self.error_items == 0 else 'error',
+                    'completed_at': fields.Datetime.now(),
+                })
+                return False
+            else:
+                # Items exist but are locked by another process
+                _logger.debug(
+                    "Queue %s: %d pending items locked by another process",
+                    self.name, remaining
+                )
+                return True  # Still work to do, but handled by other process
+
+        # Process the locked items
+        pending_items = self.env['printful.sync.queue.item'].browse(item_ids)
 
         for item in pending_items:
             try:

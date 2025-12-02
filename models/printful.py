@@ -31,18 +31,32 @@ class PrintfulRateLimiter:
     - Bucket holds up to 120 requests
     - Refills at 2 requests per second
     - Headers: X-Ratelimit-Limit, X-Ratelimit-Remaining, X-Ratelimit-Reset
+
+    Memory Management:
+    - Instances are cached per token with last-access timestamps
+    - Stale instances (unused for > 1 hour) are cleaned up periodically
+    - Call cleanup_stale_instances() to manually trigger cleanup
     """
-    _instances = {}
+    _instances = {}  # token -> (instance, last_access_time)
     _lock = threading.Lock()
+    _STALE_TIMEOUT = 3600  # 1 hour in seconds
 
     def __new__(cls, token):
         """Singleton per API token to share rate limit across all requests."""
         with cls._lock:
-            if token not in cls._instances:
-                instance = super().__new__(cls)
-                instance._initialized = False
-                cls._instances[token] = instance
-            return cls._instances[token]
+            # Cleanup stale instances periodically (every 10th access)
+            if len(cls._instances) > 0 and len(cls._instances) % 10 == 0:
+                cls._cleanup_stale_instances_unlocked()
+
+            if token in cls._instances:
+                instance, _ = cls._instances[token]
+                cls._instances[token] = (instance, time.time())  # Update last access
+                return instance
+
+            instance = super().__new__(cls)
+            instance._initialized = False
+            cls._instances[token] = (instance, time.time())
+            return instance
 
     def __init__(self, token):
         if self._initialized:
@@ -51,7 +65,39 @@ class PrintfulRateLimiter:
         self._token = token
         self._bucket = RATE_LIMIT_BUCKET_SIZE
         self._last_refill = time.time()
-        self._lock = threading.Lock()
+        self._instance_lock = threading.Lock()
+
+    @classmethod
+    def _cleanup_stale_instances_unlocked(cls):
+        """Remove stale rate limiter instances. Must be called with _lock held."""
+        now = time.time()
+        stale_tokens = [
+            token for token, (_, last_access) in cls._instances.items()
+            if now - last_access > cls._STALE_TIMEOUT
+        ]
+        for token in stale_tokens:
+            del cls._instances[token]
+            _logger.debug("Cleaned up stale rate limiter for token: %s...", token[:8] if token else 'None')
+
+    @classmethod
+    def cleanup_stale_instances(cls):
+        """Public method to clean up stale rate limiter instances."""
+        with cls._lock:
+            cls._cleanup_stale_instances_unlocked()
+
+    @classmethod
+    def remove_instance(cls, token):
+        """Remove a specific rate limiter instance (e.g., when token is rotated)."""
+        with cls._lock:
+            if token in cls._instances:
+                del cls._instances[token]
+                _logger.debug("Removed rate limiter for token: %s...", token[:8] if token else 'None')
+
+    @classmethod
+    def get_instance_count(cls):
+        """Get the number of active rate limiter instances (for monitoring)."""
+        with cls._lock:
+            return len(cls._instances)
 
     def _refill(self):
         """Refill the bucket based on elapsed time."""
@@ -72,7 +118,7 @@ class PrintfulRateLimiter:
         start_time = time.time()
 
         while True:
-            with self._lock:
+            with self._instance_lock:
                 self._refill()
                 if self._bucket >= 1:
                     self._bucket -= 1
@@ -94,7 +140,7 @@ class PrintfulRateLimiter:
         """
         remaining = headers.get('X-Ratelimit-Remaining')
         if remaining is not None:
-            with self._lock:
+            with self._instance_lock:
                 try:
                     self._bucket = int(remaining)
                 except (ValueError, TypeError):
