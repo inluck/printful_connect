@@ -20,7 +20,7 @@ class ProductProduct(models.Model):
     printful_sku = fields.Char(string='Printful SKU')
 
     # Printful metadata
-    printful_currency = fields.Char(string='Currency')
+    printful_currency = fields.Char(string='Printful Currency')
     printful_size = fields.Char(string='Size')
     printful_color = fields.Char(string='Color')
     printful_product_in_stock = fields.Boolean(string='In Stock', default=True)

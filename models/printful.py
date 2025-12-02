@@ -153,7 +153,7 @@ class PrintfulPrintful(models.Model):
     _description = "Printful Configuration"
 
     name = fields.Char(string="Printful Store")
-    token = fields.Char(string="Printful Token", password=True)
+    token = fields.Char(string="Printful Token")
     size_attribute_id = fields.Many2one(
         comodel_name="product.attribute",
         string="Size Attribute",

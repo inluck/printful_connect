@@ -35,7 +35,7 @@ class PrintfulSyncQueue(models.Model):
         ('done', 'Completed'),
         ('error', 'Error'),
         ('cancelled', 'Cancelled'),
-    ], string='Status', default='draft', tracking=True)
+    ], string='Status', default='draft')
 
     # Queue items
     item_ids = fields.One2many(

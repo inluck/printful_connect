@@ -74,7 +74,7 @@ class SaleOrder(models.Model):
     printful_order_notes = fields.Char(string='Order Notes')
 
     # Printful costs breakdown
-    order_currency = fields.Char(string='Currency')
+    order_currency = fields.Char(string='Printful Currency')
     order_subtotal = fields.Float(string='Subtotal')
     order_discount = fields.Float(string='Discount')
     order_digitization = fields.Float(string='Digitization')
@@ -82,7 +82,7 @@ class SaleOrder(models.Model):
     order_fulfillment_fee = fields.Float(string='Fulfillment Fee')
     order_retail_delivery_fee = fields.Float(string='Retail Delivery Fee')
     order_tax = fields.Float(string='Tax')
-    order_total = fields.Float(string='Total')
+    order_total = fields.Float(string='Printful Total')
     order_vat = fields.Float(string='VAT')
     shipping = fields.Float(string='Shipping Cost')
 
