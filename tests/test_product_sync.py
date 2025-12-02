@@ -113,7 +113,7 @@ class TestSingleProductSync(PrintfulTestCase):
         mock_get.side_effect = get_side_effect
         mock_post.return_value = self._create_mock_response(self.MOCK_SHIPPING_RATES)
 
-        self.printful_config.default_shipping_country_id = self.env.ref('base.us')
+        self._create_default_shipping_address()
 
         template = self.printful_config._sync_single_product('12345')
 
@@ -163,7 +163,7 @@ class TestSingleProductSync(PrintfulTestCase):
         mock_get.side_effect = get_side_effect
         mock_post.return_value = self._create_mock_response(self.MOCK_SHIPPING_RATES)
 
-        self.printful_config.default_shipping_country_id = self.env.ref('base.us')
+        self._create_default_shipping_address()
 
         callback_calls = []
         def progress_callback(synced, total, colors, sizes):

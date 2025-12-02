@@ -102,8 +102,8 @@ class TestShippingInfo(PrintfulTestCase):
         """Test successful shipping info retrieval."""
         mock_post.return_value = self._create_mock_response(self.MOCK_SHIPPING_RATES)
 
-        # Set up default shipping country
-        self.printful_config.default_shipping_country_id = self.env.ref('base.us')
+        # Set up default shipping address
+        self._create_default_shipping_address()
 
         sync_variant = {
             'variant_id': 4011,
@@ -117,11 +117,10 @@ class TestShippingInfo(PrintfulTestCase):
         self.assertEqual(result, '3-4 Business Days')
 
     @patch('odoo.addons.printful_connect.models.printful.requests.post')
-    def test_get_shipping_info_no_country(self, mock_post):
-        """Test shipping info returns None when no country configured."""
-        # Remove default shipping country and company country
-        self.printful_config.default_shipping_country_id = False
-        self.env.company.country_id = False
+    def test_get_shipping_info_no_address(self, mock_post):
+        """Test shipping info returns None when no default address configured."""
+        # Ensure no default address is configured
+        self.printful_config.default_address_ids.unlink()
 
         sync_variant = {'variant_id': 4011}
         result = self.printful_config._get_shipping_info(sync_variant, {})
@@ -133,7 +132,7 @@ class TestShippingInfo(PrintfulTestCase):
     def test_get_shipping_info_api_error(self, mock_post):
         """Test shipping info returns None on API error."""
         mock_post.side_effect = Exception('API Error')
-        self.printful_config.default_shipping_country_id = self.env.ref('base.us')
+        self._create_default_shipping_address()
 
         sync_variant = {'variant_id': 4011, 'retail_price': '25.00'}
         result = self.printful_config._get_shipping_info(sync_variant, {})

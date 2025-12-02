@@ -301,3 +301,22 @@ class PrintfulTestCase(TransactionCase):
             'price_unit': 25.00,
         })
         return order
+
+    def _create_default_shipping_address(self, is_primary=True):
+        """Create a default shipping address for the Printful config."""
+        country_us = self.env.ref('base.us')
+        state_ny = self.env['res.country.state'].search([
+            ('country_id', '=', country_us.id),
+            ('code', '=', 'NY')
+        ], limit=1)
+
+        return self.env['printful.default.address'].create({
+            'name': 'US Default Address',
+            'printful_config_id': self.printful_config.id,
+            'country_id': country_us.id,
+            'state_id': state_ny.id if state_ny else False,
+            'city': 'New York',
+            'zip_code': '10001',
+            'address1': '123 Test Street',
+            'is_primary': is_primary,
+        })

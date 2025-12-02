@@ -66,16 +66,15 @@
                                     <field name="multiple_product_images"/>
                                 </group>
                             </group>
-                            <group>
-                                <group string="Legacy Shipping">
-                                    <field name="default_shipping_country_id" options="{'no_create': True}"/>
-                                    <field name="shipping_cache_ttl"/>
-                                </group>
-                            </group>
                         </page>
                         <page string="Shipping Methods" name="shipping">
                             <group>
-                                <field name="default_shipping_method_id" readonly="1"/>
+                                <group>
+                                    <field name="default_shipping_method_id" readonly="1"/>
+                                </group>
+                                <group string="Cache Settings">
+                                    <field name="shipping_cache_ttl"/>
+                                </group>
                             </group>
                             <field name="shipping_method_ids">
                                 <list editable="bottom">
