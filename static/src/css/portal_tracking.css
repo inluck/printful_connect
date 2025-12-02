@@ -1,0 +1,104 @@
+/* Printful Portal Tracking Styles */
+
+.printful-timeline {
+    padding: 20px 0;
+}
+
+.timeline-track {
+    display: flex;
+    justify-content: space-between;
+    position: relative;
+}
+
+.timeline-track::before {
+    content: '';
+    position: absolute;
+    top: 15px;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: #e9ecef;
+    z-index: 0;
+}
+
+.timeline-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    z-index: 1;
+    flex: 1;
+}
+
+.timeline-marker {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #e9ecef;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6c757d;
+    font-size: 14px;
+    margin-bottom: 8px;
+}
+
+.timeline-step.completed .timeline-marker {
+    background: #28a745;
+    color: white;
+}
+
+.timeline-step.active .timeline-marker {
+    background: #007bff;
+    color: white;
+    animation: pulse 2s infinite;
+}
+
+.timeline-step.future .timeline-marker {
+    background: #e9ecef;
+    color: #adb5bd;
+}
+
+.timeline-content {
+    text-align: center;
+}
+
+.timeline-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.timeline-step.future .timeline-label {
+    color: #adb5bd;
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+}
+
+@media (max-width: 576px) {
+    .timeline-track {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .timeline-track::before {
+        top: 0;
+        bottom: 0;
+        left: 15px;
+        right: auto;
+        width: 3px;
+        height: auto;
+    }
+    .timeline-step {
+        flex-direction: row;
+        margin-bottom: 20px;
+    }
+    .timeline-marker {
+        margin-bottom: 0;
+        margin-right: 15px;
+    }
+    .timeline-content {
+        text-align: left;
+    }
+}
