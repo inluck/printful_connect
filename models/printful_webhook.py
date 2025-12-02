@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 from markupsafe import Markup, escape as html_escape
 
 from odoo import api, fields, models, _
-from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
@@ -395,7 +394,6 @@ class PrintfulWebhookEvent(models.Model):
             shipped_at = False
             if ship_date:
                 try:
-                    from datetime import datetime
                     # Try ISO format first
                     if 'T' in ship_date:
                         shipped_at = datetime.fromisoformat(ship_date.replace('Z', '+00:00'))

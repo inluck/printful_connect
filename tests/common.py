@@ -2,7 +2,7 @@
 """
 Common test utilities and mock data for Printful Connect tests.
 """
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 from odoo.tests.common import TransactionCase
 
 

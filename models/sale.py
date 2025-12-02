@@ -439,7 +439,7 @@ class SaleOrder(models.Model):
         # Non-2xx responses might return HTML error pages
         try:
             result = response.json()
-        except (json.JSONDecodeError, requests.exceptions.JSONDecodeError) as e:
+        except (json.JSONDecodeError, requests.exceptions.JSONDecodeError):
             _logger.error(
                 "Printful API returned non-JSON response (status %d): %s",
                 response.status_code, response.text[:500]

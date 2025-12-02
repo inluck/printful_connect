@@ -2,7 +2,7 @@
 """
 Tests for product synchronization functionality.
 """
-from unittest.mock import patch, Mock, call
+from unittest.mock import patch, Mock
 from odoo.exceptions import UserError
 from odoo.tests.common import tagged
 from .common import PrintfulTestCase

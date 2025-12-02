@@ -5,7 +5,7 @@ import json
 import time
 import threading
 from decimal import Decimal, ROUND_HALF_UP
-from datetime import datetime, timedelta
+from datetime import timedelta
 from html import escape as html_escape
 from tabulate import tabulate
 from odoo import api, fields, models, _
@@ -1669,7 +1669,7 @@ class PrintfulPrintful(models.Model):
 
             return rates
 
-        except Exception as e:
+        except Exception:
             _logger.exception("Failed to get shipping rates")
             return []
 

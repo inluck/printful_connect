@@ -5,7 +5,7 @@ import logging
 from odoo import fields, http, _
 from odoo.http import request
 from odoo.addons.website_sale.controllers.main import WebsiteSale
-from odoo.addons.portal.controllers.portal import CustomerPortal, pager as portal_pager
+from odoo.addons.portal.controllers.portal import CustomerPortal
 from odoo.exceptions import AccessError, MissingError
 
 _logger = logging.getLogger(__name__)
@@ -280,7 +280,7 @@ class PrintfulWebhookController(http.Controller):
                 'event_id': event.id,
             })
 
-        except Exception as e:
+        except Exception:
             _logger.exception("Unexpected error processing webhook")
             return request.make_json_response(
                 {'error': 'Internal server error'},
