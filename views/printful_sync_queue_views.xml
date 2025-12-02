@@ -70,7 +70,7 @@
         <field name="name">printful.sync.queue.item.tree</field>
         <field name="model">printful.sync.queue.item</field>
         <field name="arch" type="xml">
-            <tree decoration-danger="state == 'error'"
+            <list decoration-danger="state == 'error'"
                   decoration-success="state == 'done'"
                   decoration-info="state == 'in_progress'">
                 <field name="sequence" widget="handle"/>
@@ -90,7 +90,7 @@
                         class="btn-link" invisible="state != 'error'"/>
                 <button name="action_view_product" type="object" string="View"
                         class="btn-link" invisible="not product_template_id"/>
-            </tree>
+            </list>
         </field>
     </record>
 
@@ -158,7 +158,7 @@
         <field name="name">printful.sync.queue.tree</field>
         <field name="model">printful.sync.queue</field>
         <field name="arch" type="xml">
-            <tree decoration-danger="state == 'error'"
+            <list decoration-danger="state == 'error'"
                   decoration-success="state == 'done'"
                   decoration-info="state == 'running'">
                 <field name="name"/>
@@ -175,7 +175,7 @@
                        decoration-muted="state in ('draft', 'cancelled')"/>
                 <field name="started_at"/>
                 <field name="duration" widget="float_time"/>
-            </tree>
+            </list>
         </field>
     </record>
 
@@ -255,7 +255,7 @@
                         <page string="Products to Sync" name="items">
                             <field name="item_ids" nolabel="1"
                                    context="{'default_queue_id': active_id}">
-                                <tree decoration-danger="state == 'error'"
+                                <list decoration-danger="state == 'error'"
                                       decoration-success="state == 'done'"
                                       decoration-info="state == 'in_progress'">
                                     <field name="sequence" widget="handle"/>
@@ -270,7 +270,7 @@
                                     <button name="action_sync_product" type="object"
                                             string="Sync" icon="fa-refresh"
                                             invisible="state not in ('pending', 'error')"/>
-                                </tree>
+                                </list>
                             </field>
                         </page>
                     </notebook>
@@ -373,7 +373,7 @@
     <record id="printful_sync_queue_action" model="ir.actions.act_window">
         <field name="name">Sync Queue</field>
         <field name="res_model">printful.sync.queue</field>
-        <field name="view_mode">tree,kanban,form</field>
+        <field name="view_mode">list,kanban,form</field>
         <field name="search_view_id" ref="printful_sync_queue_search"/>
         <field name="context">{'search_default_filter_running': 1}</field>
         <field name="help" type="html">
@@ -391,7 +391,7 @@
     <record id="printful_sync_queue_item_action" model="ir.actions.act_window">
         <field name="name">Sync Items</field>
         <field name="res_model">printful.sync.queue.item</field>
-        <field name="view_mode">kanban,tree,form</field>
+        <field name="view_mode">kanban,list,form</field>
         <field name="search_view_id" ref="printful_sync_queue_item_search"/>
         <field name="context">{'search_default_group_state': 1}</field>
         <field name="help" type="html">
