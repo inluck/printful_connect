@@ -149,7 +149,28 @@
         </field>
     </record>
 
-    <!-- Action for Queue Items (must be defined before form view that references it) -->
+    <!-- Search View for Queue Items (must be defined before action that references it) -->
+    <record id="printful_sync_queue_item_search" model="ir.ui.view">
+        <field name="name">printful.sync.queue.item.search</field>
+        <field name="model">printful.sync.queue.item</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="printful_product_id"/>
+                <field name="queue_id"/>
+                <filter name="filter_pending" string="Pending" domain="[('state', '=', 'pending')]"/>
+                <filter name="filter_in_progress" string="In Progress" domain="[('state', '=', 'in_progress')]"/>
+                <filter name="filter_done" string="Done" domain="[('state', '=', 'done')]"/>
+                <filter name="filter_error" string="Errors" domain="[('state', '=', 'error')]"/>
+                <group expand="0" string="Group By">
+                    <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
+                    <filter name="group_queue" string="Queue" context="{'group_by': 'queue_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action for Queue Items -->
     <record id="printful_sync_queue_item_action" model="ir.actions.act_window">
         <field name="name">Sync Items</field>
         <field name="res_model">printful.sync.queue.item</field>
@@ -356,27 +377,6 @@
                 <group expand="0" string="Group By">
                     <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
                     <filter name="group_store" string="Store" context="{'group_by': 'printful_config_id'}"/>
-                </group>
-            </search>
-        </field>
-    </record>
-
-    <!-- Search View for Queue Items -->
-    <record id="printful_sync_queue_item_search" model="ir.ui.view">
-        <field name="name">printful.sync.queue.item.search</field>
-        <field name="model">printful.sync.queue.item</field>
-        <field name="arch" type="xml">
-            <search>
-                <field name="name"/>
-                <field name="printful_product_id"/>
-                <field name="queue_id"/>
-                <filter name="filter_pending" string="Pending" domain="[('state', '=', 'pending')]"/>
-                <filter name="filter_in_progress" string="In Progress" domain="[('state', '=', 'in_progress')]"/>
-                <filter name="filter_done" string="Done" domain="[('state', '=', 'done')]"/>
-                <filter name="filter_error" string="Errors" domain="[('state', '=', 'error')]"/>
-                <group expand="0" string="Group By">
-                    <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
-                    <filter name="group_queue" string="Queue" context="{'group_by': 'queue_id'}"/>
                 </group>
             </search>
         </field>
