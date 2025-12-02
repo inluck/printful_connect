@@ -17,7 +17,6 @@ for queue in running_queues:
             </field>
             <field name="interval_number">2</field>
             <field name="interval_type">minutes</field>
-            <field name="doall" eval="False"/>
             <field name="priority">100</field>
             <field name="active" eval="True"/>
         </record>
@@ -30,7 +29,6 @@ for queue in running_queues:
             <field name="code">model.process_pending_events()</field>
             <field name="interval_number">5</field>
             <field name="interval_type">minutes</field>
-            <field name="doall" eval="False"/>
             <field name="priority">110</field>
             <field name="active" eval="True"/>
         </record>
@@ -43,7 +41,6 @@ for queue in running_queues:
             <field name="code">model.cleanup_expired()</field>
             <field name="interval_number">1</field>
             <field name="interval_type">hours</field>
-            <field name="doall" eval="False"/>
             <field name="priority">200</field>
             <field name="active" eval="True"/>
         </record>
@@ -61,7 +58,6 @@ for config in model.search([]):
             </field>
             <field name="interval_number">1</field>
             <field name="interval_type">hours</field>
-            <field name="doall" eval="False"/>
             <field name="priority">1000</field>
             <field name="active" eval="False"/>
         </record>
