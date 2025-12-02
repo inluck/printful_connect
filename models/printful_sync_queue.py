@@ -13,6 +13,7 @@ class PrintfulSyncQueue(models.Model):
     Each queue can contain multiple product items to sync.
     """
     _name = 'printful.sync.queue'
+    _inherit = ['mail.thread', 'mail.activity.mixin']
     _description = 'Printful Sync Queue'
     _order = 'create_date desc'
 
@@ -35,7 +36,7 @@ class PrintfulSyncQueue(models.Model):
         ('done', 'Completed'),
         ('error', 'Error'),
         ('cancelled', 'Cancelled'),
-    ], string='Status', default='draft')
+    ], string='Status', default='draft', tracking=True)
 
     # Queue items
     item_ids = fields.One2many(
