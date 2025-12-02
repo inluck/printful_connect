@@ -129,7 +129,7 @@ class SaleOrder(models.Model):
 
     # Related partner fields
     tax_number = fields.Char(related='partner_id.tax_number', string='Tax Number')
-    company = fields.Char(related='partner_id.company', string='Company')
+    printful_company = fields.Char(related='partner_id.printful_company', string='Recipient Company')
 
     def action_create_push_order_printful(self):
         """Push this order to Printful for fulfillment."""
@@ -694,7 +694,7 @@ class ResPartner(models.Model):
     _inherit = 'res.partner'
 
     tax_number = fields.Char(string='Tax Number')
-    company = fields.Char(string='Company Name')
+    printful_company = fields.Char(string='Recipient Company')
 
 
 class SaleOrderLine(models.Model):
