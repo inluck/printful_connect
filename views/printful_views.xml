@@ -267,4 +267,11 @@
               parent="stock.menu_stock_config_settings"
               sequence="20"
               name="Printful Stores"/>
+
+    <!-- Printful Stores menu under Configuration (parent defined in printful_sync_queue_views.xml) -->
+    <menuitem id="menu_printful_stores"
+              name="Printful Stores"
+              parent="menu_printful_config"
+              action="action_printful_view"
+              sequence="10"/>
 </odoo>
