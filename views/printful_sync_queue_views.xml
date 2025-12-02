@@ -149,6 +149,23 @@
         </field>
     </record>
 
+    <!-- Action for Queue Items (must be defined before form view that references it) -->
+    <record id="printful_sync_queue_item_action" model="ir.actions.act_window">
+        <field name="name">Sync Items</field>
+        <field name="res_model">printful.sync.queue.item</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="search_view_id" ref="printful_sync_queue_item_search"/>
+        <field name="context">{'search_default_group_state': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No products in queue
+            </p>
+            <p>
+                Products will appear here when you populate a sync queue.
+            </p>
+        </field>
+    </record>
+
     <!-- ==================== -->
     <!-- SYNC QUEUE VIEWS -->
     <!-- ==================== -->
@@ -383,23 +400,6 @@
             <p>
                 Sync queues let you visually track the progress of product imports from Printful.
                 Each product and its variants are tracked individually.
-            </p>
-        </field>
-    </record>
-
-    <!-- Action for Queue Items (standalone) -->
-    <record id="printful_sync_queue_item_action" model="ir.actions.act_window">
-        <field name="name">Sync Items</field>
-        <field name="res_model">printful.sync.queue.item</field>
-        <field name="view_mode">kanban,list,form</field>
-        <field name="search_view_id" ref="printful_sync_queue_item_search"/>
-        <field name="context">{'search_default_group_state': 1}</field>
-        <field name="help" type="html">
-            <p class="o_view_nocontent_smiling_face">
-                No products in queue
-            </p>
-            <p>
-                Products will appear here when you populate a sync queue.
             </p>
         </field>
     </record>
