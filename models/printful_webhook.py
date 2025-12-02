@@ -15,6 +15,8 @@ class PrintfulWebhook(models.Model):
     """
     Configuration model for Printful webhooks.
     Stores webhook secret for signature validation and tracks webhook status.
+
+    Supports auto-registration with Printful API to eliminate manual configuration.
     """
     _name = 'printful.webhook'
     _description = 'Printful Webhook Configuration'
@@ -39,20 +41,44 @@ class PrintfulWebhook(models.Model):
     webhook_secret = fields.Char(
         string="Webhook Secret",
         help="Secret key for validating webhook signatures. "
-             "This is provided by Printful when you create a webhook.",
+             "Auto-populated when registering via API.",
     )
 
     # Webhook URL (computed based on Odoo base URL)
     webhook_url = fields.Char(
         string="Webhook URL",
         compute='_compute_webhook_url',
-        help="URL to configure in Printful dashboard",
+        help="URL that Printful will send webhook notifications to",
     )
 
     # Printful webhook ID (if registered via API)
     printful_webhook_id = fields.Char(
         string="Printful Webhook ID",
         help="Webhook ID returned by Printful API",
+    )
+
+    # Public key from Printful (for additional validation if needed)
+    public_key = fields.Char(
+        string="Public Key",
+        help="Public key returned by Printful API for additional verification",
+        readonly=True,
+    )
+
+    # Registration status
+    is_registered = fields.Boolean(
+        string="Registered",
+        compute='_compute_is_registered',
+        store=True,
+        help="Whether this webhook is currently registered with Printful",
+    )
+    registered_at = fields.Datetime(
+        string="Registered At",
+        readonly=True,
+        help="When this webhook was registered with Printful",
+    )
+    expires_at = fields.Datetime(
+        string="Expires At",
+        help="When the webhook configuration expires in Printful",
     )
 
     # Event subscriptions
@@ -99,6 +125,13 @@ class PrintfulWebhook(models.Model):
                 ('webhook_id', '=', record.id),
                 ('state', '=', 'failed')
             ])
+
+    @api.depends('webhook_secret', 'registered_at')
+    def _compute_is_registered(self):
+        """Compute whether webhook is registered with Printful."""
+        for record in self:
+            # Consider registered if we have a secret and registration timestamp
+            record.is_registered = bool(record.webhook_secret and record.registered_at)
 
     def validate_signature(self, payload, signature):
         """
@@ -183,7 +216,7 @@ class PrintfulWebhook(models.Model):
         return events
 
     def action_test_webhook(self):
-        """Action to test webhook connectivity."""
+        """Action to test webhook connectivity (legacy - shows URL for manual config)."""
         self.ensure_one()
         return {
             'type': 'ir.actions.client',
@@ -195,6 +228,316 @@ class PrintfulWebhook(models.Model):
                 'sticky': False,
             }
         }
+
+    def action_register_webhook(self):
+        """
+        Register this webhook with Printful via API.
+
+        This automatically:
+        - Configures the webhook URL in Printful
+        - Subscribes to selected event types
+        - Retrieves and stores the webhook secret for signature validation
+
+        Returns:
+            Notification action showing success/failure
+        """
+        self.ensure_one()
+
+        if not self.printful_config_id:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Configuration Error'),
+                    'message': _('Please select a Printful store configuration first.'),
+                    'type': 'danger',
+                    'sticky': False,
+                }
+            }
+
+        # Ensure we have HTTPS URL (required by Printful)
+        if not self.webhook_url.startswith('https://'):
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('URL Error'),
+                    'message': _('Webhook URL must use HTTPS. Please configure your Odoo base URL to use HTTPS.'),
+                    'type': 'danger',
+                    'sticky': True,
+                }
+            }
+
+        # Get subscribed events
+        events = self.get_subscribed_events()
+        if not events:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('No Events Selected'),
+                    'message': _('Please select at least one event type to subscribe to.'),
+                    'type': 'warning',
+                    'sticky': False,
+                }
+            }
+
+        try:
+            # Register with Printful API
+            result = self.printful_config_id.setup_webhooks(
+                webhook_url=self.webhook_url,
+                events=events,
+                expires_at=self.expires_at if self.expires_at else None,
+            )
+
+            # Update webhook record with returned data
+            update_vals = {
+                'registered_at': fields.Datetime.now(),
+            }
+
+            # Store the secret key (critical for signature validation)
+            if result.get('secret_key'):
+                update_vals['webhook_secret'] = result['secret_key']
+
+            # Store public key if provided
+            if result.get('public_key'):
+                update_vals['public_key'] = result['public_key']
+
+            # Store expiration if provided
+            if result.get('expires_at'):
+                try:
+                    expires = result['expires_at']
+                    if isinstance(expires, str):
+                        # Parse ISO 8601 datetime
+                        from datetime import datetime as dt
+                        if expires.endswith('Z'):
+                            expires = expires[:-1] + '+00:00'
+                        update_vals['expires_at'] = dt.fromisoformat(expires)
+                except (ValueError, TypeError) as e:
+                    _logger.warning("Could not parse expires_at: %s", e)
+
+            self.write(update_vals)
+
+            _logger.info(
+                "Successfully registered webhook '%s' for store '%s' with %d events",
+                self.name, self.printful_config_id.name, len(events)
+            )
+
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Webhook Registered'),
+                    'message': _('Successfully registered webhook with Printful for %d events. '
+                                'Secret key has been automatically configured.') % len(events),
+                    'type': 'success',
+                    'sticky': False,
+                }
+            }
+
+        except Exception as e:
+            _logger.exception("Failed to register webhook '%s'", self.name)
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Registration Failed'),
+                    'message': str(e),
+                    'type': 'danger',
+                    'sticky': True,
+                }
+            }
+
+    def action_unregister_webhook(self):
+        """
+        Remove this webhook from Printful.
+
+        This disables all webhook notifications from Printful for this store.
+
+        Returns:
+            Notification action showing success/failure
+        """
+        self.ensure_one()
+
+        if not self.printful_config_id:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Configuration Error'),
+                    'message': _('No Printful store configuration found.'),
+                    'type': 'danger',
+                    'sticky': False,
+                }
+            }
+
+        try:
+            self.printful_config_id.disable_webhooks()
+
+            # Clear registration data but keep event preferences
+            self.write({
+                'webhook_secret': False,
+                'public_key': False,
+                'registered_at': False,
+                'printful_webhook_id': False,
+            })
+
+            _logger.info(
+                "Successfully unregistered webhook '%s' for store '%s'",
+                self.name, self.printful_config_id.name
+            )
+
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Webhook Unregistered'),
+                    'message': _('Successfully removed webhook from Printful.'),
+                    'type': 'success',
+                    'sticky': False,
+                }
+            }
+
+        except Exception as e:
+            _logger.exception("Failed to unregister webhook '%s'", self.name)
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Unregistration Failed'),
+                    'message': str(e),
+                    'type': 'danger',
+                    'sticky': True,
+                }
+            }
+
+    def action_sync_webhook_status(self):
+        """
+        Sync webhook status from Printful API.
+
+        Retrieves current webhook configuration from Printful and updates
+        local record to match. Useful for verifying registration status.
+
+        Returns:
+            Notification action showing current status
+        """
+        self.ensure_one()
+
+        if not self.printful_config_id:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Configuration Error'),
+                    'message': _('No Printful store configuration found.'),
+                    'type': 'danger',
+                    'sticky': False,
+                }
+            }
+
+        try:
+            config = self.printful_config_id.get_webhook_configuration()
+
+            if config is None:
+                # No webhook configured in Printful
+                self.write({
+                    'webhook_secret': False,
+                    'public_key': False,
+                    'registered_at': False,
+                })
+                return {
+                    'type': 'ir.actions.client',
+                    'tag': 'display_notification',
+                    'params': {
+                        'title': _('Not Registered'),
+                        'message': _('No webhook is currently registered with Printful for this store.'),
+                        'type': 'warning',
+                        'sticky': False,
+                    }
+                }
+
+            # Update local record with Printful data
+            update_vals = {}
+
+            if config.get('public_key'):
+                update_vals['public_key'] = config['public_key']
+
+            if config.get('expires_at'):
+                try:
+                    expires = config['expires_at']
+                    if isinstance(expires, str):
+                        from datetime import datetime as dt
+                        if expires.endswith('Z'):
+                            expires = expires[:-1] + '+00:00'
+                        update_vals['expires_at'] = dt.fromisoformat(expires)
+                except (ValueError, TypeError):
+                    pass
+
+            # Update event subscriptions based on Printful response
+            registered_events = set()
+            for event_config in config.get('events', []):
+                event_type = event_config.get('type')
+                if event_type:
+                    registered_events.add(event_type)
+
+            # Map Printful event types to our field names
+            event_field_mapping = {
+                'order_created': 'event_order_created',
+                'order_updated': 'event_order_updated',
+                'order_failed': 'event_order_failed',
+                'order_canceled': 'event_order_canceled',
+                'package_shipped': 'event_package_shipped',
+                'package_returned': 'event_package_returned',
+                'product_synced': 'event_product_synced',
+                'product_updated': 'event_product_updated',
+                'product_deleted': 'event_product_deleted',
+                'stock_updated': 'event_stock_updated',
+            }
+
+            for event_type, field_name in event_field_mapping.items():
+                update_vals[field_name] = event_type in registered_events
+
+            if update_vals:
+                self.write(update_vals)
+
+            # Determine registration status message
+            webhook_url = config.get('default_url', 'Unknown')
+            events_count = len(registered_events)
+
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Webhook Status'),
+                    'message': _('Webhook is registered at %s with %d event subscriptions.') % (
+                        webhook_url, events_count
+                    ),
+                    'type': 'success',
+                    'sticky': False,
+                }
+            }
+
+        except Exception as e:
+            _logger.exception("Failed to sync webhook status")
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Sync Failed'),
+                    'message': str(e),
+                    'type': 'danger',
+                    'sticky': True,
+                }
+            }
+
+    @api.model
+    def create(self, vals):
+        """Override create to auto-register webhook if configured."""
+        record = super().create(vals)
+        # Note: Auto-registration on create is not done by default
+        # as user may want to configure events first. They can use the
+        # "Register" button when ready.
+        return record
 
 
 class PrintfulWebhookEvent(models.Model):
@@ -698,6 +1041,8 @@ class PrintfulWebhookEvent(models.Model):
         This is the state machine dispatcher - each transition maps
         to a specific customer-friendly email template.
 
+        Also handles order completion when delivered.
+
         Args:
             sale_order: The sale.order record
             old_status: Previous fulfillment status
@@ -736,6 +1081,53 @@ class PrintfulWebhookEvent(models.Model):
             _logger.debug(
                 "No email template for transition %s → %s",
                 old_status, new_status
+            )
+
+        # Complete the order when delivered
+        if new_status == 'delivered':
+            self._complete_order(sale_order)
+
+    def _complete_order(self, sale_order):
+        """
+        Mark a sale order as complete after successful delivery.
+
+        This locks the order from further modifications and signals
+        that the fulfillment cycle is complete.
+
+        Args:
+            sale_order: The sale.order record to complete
+        """
+        try:
+            # Check if order is already done
+            if sale_order.state == 'done':
+                _logger.debug("Order %s already in done state", sale_order.name)
+                return
+
+            # Mark the order as done (locks it)
+            # Using action_done() if available, otherwise direct state update
+            if hasattr(sale_order, 'action_done'):
+                sale_order.action_done()
+            else:
+                sale_order.write({'state': 'done'})
+
+            # Post completion message
+            sale_order.message_post(
+                body=_("Order fulfilled and delivered successfully. Order completed."),
+                message_type='notification',
+            )
+
+            _logger.info(
+                "Order %s marked as complete after delivery confirmation",
+                sale_order.name
+            )
+
+        except Exception as e:
+            # Don't fail the webhook if order completion fails
+            # The delivery was still successful
+            _logger.warning(
+                "Could not mark order %s as complete: %s. "
+                "Order may need to be closed manually.",
+                sale_order.name, str(e)
             )
 
     @api.model

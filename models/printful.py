@@ -214,11 +214,22 @@ class PrintfulPrintful(models.Model):
         help="Primary address used for shipping estimates during product sync",
     )
 
-    # Webhook configuration
+    # Webhook configuration (singleton per store - Printful only allows one active webhook per token)
     webhook_ids = fields.One2many(
         comodel_name='printful.webhook',
         inverse_name='printful_config_id',
         string='Webhooks',
+    )
+    webhook_id = fields.Many2one(
+        comodel_name='printful.webhook',
+        string="Active Webhook",
+        compute='_compute_webhook_id',
+        help="The active webhook configuration for this store",
+    )
+    webhook_registered = fields.Boolean(
+        string="Webhooks Active",
+        compute='_compute_webhook_id',
+        help="Whether webhooks are registered and active with Printful",
     )
 
     # Shipping rate cache TTL
@@ -300,6 +311,14 @@ class PrintfulPrintful(models.Model):
             )[:1]
             record.primary_default_address_id = primary.id if primary else False
 
+    @api.depends('webhook_ids', 'webhook_ids.is_registered', 'webhook_ids.active')
+    def _compute_webhook_id(self):
+        """Get the active webhook for this configuration."""
+        for record in self:
+            active_webhook = record.webhook_ids.filtered(lambda w: w.active)[:1]
+            record.webhook_id = active_webhook.id if active_webhook else False
+            record.webhook_registered = active_webhook.is_registered if active_webhook else False
+
     def _get_api_base_url(self):
         """Get the appropriate API base URL based on version setting."""
         self.ensure_one()
@@ -353,6 +372,193 @@ class PrintfulPrintful(models.Model):
             'view_mode': 'form',
             'target': 'current',
         }
+
+    def action_setup_webhooks(self):
+        """
+        One-click webhook setup for this store.
+
+        This automatically:
+        1. Creates a webhook configuration (if needed)
+        2. Subscribes to all events required for the customer notification state machine
+        3. Registers with Printful API
+        4. Stores the webhook secret for signature validation
+
+        Returns:
+            Notification action showing success/failure
+        """
+        self.ensure_one()
+
+        if not self.token:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Configuration Error'),
+                    'message': _('Please configure a Printful API token first.'),
+                    'type': 'danger',
+                    'sticky': False,
+                }
+            }
+
+        # Get or create webhook configuration
+        webhook = self.webhook_ids.filtered(lambda w: w.active)[:1]
+        if not webhook:
+            webhook = self.env['printful.webhook'].create({
+                'name': f"Webhook - {self.name}",
+                'printful_config_id': self.id,
+                # Enable all events needed for the state machine
+                'event_order_created': True,
+                'event_order_updated': True,
+                'event_order_failed': True,
+                'event_order_canceled': True,
+                'event_package_shipped': True,
+                'event_package_returned': True,
+                'event_product_synced': True,
+                'event_product_updated': True,
+                'event_product_deleted': True,
+                'event_stock_updated': True,
+            })
+        else:
+            # Ensure all events are enabled
+            webhook.write({
+                'event_order_created': True,
+                'event_order_updated': True,
+                'event_order_failed': True,
+                'event_order_canceled': True,
+                'event_package_shipped': True,
+                'event_package_returned': True,
+                'event_product_synced': True,
+                'event_product_updated': True,
+                'event_product_deleted': True,
+                'event_stock_updated': True,
+            })
+
+        # Compute webhook URL
+        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+        webhook_url = f"{base_url}/printful/webhook/{self.id}"
+
+        # Validate HTTPS
+        if not webhook_url.startswith('https://'):
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('HTTPS Required'),
+                    'message': _('Printful requires HTTPS for webhooks. Please configure your Odoo '
+                                'base URL to use HTTPS (Settings > System Parameters > web.base.url).'),
+                    'type': 'danger',
+                    'sticky': True,
+                }
+            }
+
+        # Get all events
+        events = webhook.get_subscribed_events()
+
+        try:
+            # Register with Printful API
+            result = self.setup_webhooks(
+                webhook_url=webhook_url,
+                events=events,
+            )
+
+            # Update webhook record with returned data
+            from datetime import datetime as dt
+
+            update_vals = {
+                'registered_at': fields.Datetime.now(),
+            }
+
+            if result.get('secret_key'):
+                update_vals['webhook_secret'] = result['secret_key']
+
+            if result.get('public_key'):
+                update_vals['public_key'] = result['public_key']
+
+            if result.get('expires_at'):
+                try:
+                    expires = result['expires_at']
+                    if isinstance(expires, str):
+                        if expires.endswith('Z'):
+                            expires = expires[:-1] + '+00:00'
+                        update_vals['expires_at'] = dt.fromisoformat(expires)
+                except (ValueError, TypeError):
+                    pass
+
+            webhook.write(update_vals)
+
+            _logger.info(
+                "Successfully configured webhooks for store '%s' with %d events",
+                self.name, len(events)
+            )
+
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Webhooks Configured'),
+                    'message': _('Successfully registered %d webhook events with Printful. '
+                                'You will now receive real-time order and shipping updates.') % len(events),
+                    'type': 'success',
+                    'sticky': False,
+                }
+            }
+
+        except Exception as e:
+            _logger.exception("Failed to setup webhooks for store '%s'", self.name)
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Setup Failed'),
+                    'message': str(e),
+                    'type': 'danger',
+                    'sticky': True,
+                }
+            }
+
+    def action_disable_webhooks(self):
+        """
+        Disable webhooks for this store.
+
+        Removes webhook configuration from Printful and clears local registration data.
+        """
+        self.ensure_one()
+
+        try:
+            self.disable_webhooks()
+
+            # Clear registration data from webhook record
+            webhook = self.webhook_ids.filtered(lambda w: w.active)[:1]
+            if webhook:
+                webhook.write({
+                    'webhook_secret': False,
+                    'public_key': False,
+                    'registered_at': False,
+                })
+
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Webhooks Disabled'),
+                    'message': _('Webhook notifications have been disabled for this store.'),
+                    'type': 'success',
+                    'sticky': False,
+                }
+            }
+
+        except Exception as e:
+            _logger.exception("Failed to disable webhooks for store '%s'", self.name)
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Disable Failed'),
+                    'message': str(e),
+                    'type': 'danger',
+                    'sticky': True,
+                }
+            }
 
     def action_get_printful_product(self, printful):
         """
@@ -1543,6 +1749,157 @@ class PrintfulPrintful(models.Model):
 
             response.raise_for_status()
             return response
+
+    def _make_api_delete_request(self, url, headers, timeout=30, max_retries=3):
+        """
+        Make a rate-limited API DELETE request using leaky bucket algorithm.
+
+        Args:
+            url: API endpoint URL
+            headers: Request headers (including auth)
+            timeout: Request timeout in seconds
+            max_retries: Maximum number of retry attempts for rate limiting (default: 3)
+
+        Returns:
+            requests.Response object
+
+        Raises:
+            requests.exceptions.HTTPError: If rate limit retries exhausted or other HTTP error
+        """
+        config = self
+        retry_count = 0
+
+        while True:
+            if config.token:
+                limiter = config._get_rate_limiter()
+                limiter.acquire()
+
+            response = requests.delete(url, headers=headers, timeout=timeout)
+
+            # Update rate limiter from response headers
+            if config.token:
+                limiter.update_from_headers(response.headers)
+
+            if response.status_code == 429:
+                retry_count += 1
+                if retry_count > max_retries:
+                    _logger.error(
+                        "Rate limit retries exhausted (%d/%d) for DELETE URL: %s",
+                        retry_count, max_retries, url
+                    )
+                    response.raise_for_status()  # Will raise HTTPError
+
+                # Rate limited - wait and retry
+                retry_after = int(response.headers.get('Retry-After', 5))
+                _logger.warning(
+                    "Rate limited. Waiting %d seconds before retry (%d/%d).",
+                    retry_after, retry_count, max_retries
+                )
+                time.sleep(retry_after)
+                continue  # Retry the loop
+
+            # 204 No Content is success for DELETE
+            if response.status_code not in (200, 204):
+                response.raise_for_status()
+            return response
+
+    # ==========================================
+    # WEBHOOK API METHODS (v2)
+    # ==========================================
+
+    def get_webhook_configuration(self):
+        """
+        Get current webhook configuration from Printful API.
+
+        Returns:
+            dict with webhook config or None if not configured
+        """
+        self.ensure_one()
+        headers = self._get_auth_headers()
+        url = f"{PRINTFUL_API_V2_BASE}/webhooks"
+
+        try:
+            response = self._make_api_request(url, headers)
+            result = response.json()
+
+            if result.get('code') == 200:
+                return result.get('result', {})
+            else:
+                _logger.warning("Failed to get webhook config: %s", result)
+                return None
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                # No webhook configured
+                return None
+            raise
+
+    def setup_webhooks(self, webhook_url, events, expires_at=None):
+        """
+        Configure webhooks in Printful using the API.
+
+        Args:
+            webhook_url: HTTPS URL to receive webhook notifications
+            events: List of event type strings to subscribe to
+            expires_at: Optional datetime when config should expire
+
+        Returns:
+            dict with webhook config including secret_key and public_key
+        """
+        self.ensure_one()
+        headers = self._get_auth_headers()
+        url = f"{PRINTFUL_API_V2_BASE}/webhooks"
+
+        # Build events configuration
+        event_configs = []
+        for event_type in events:
+            event_configs.append({
+                "type": event_type,
+            })
+
+        payload = {
+            "default_url": webhook_url,
+            "events": event_configs,
+        }
+
+        if expires_at:
+            # Format as ISO 8601
+            payload["expires_at"] = expires_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        response = self._make_api_post_request(url, headers, payload)
+        result = response.json()
+
+        if result.get('code') == 200:
+            _logger.info(
+                "Successfully configured webhooks for store %s at URL: %s",
+                self.name, webhook_url
+            )
+            return result.get('result', {})
+        else:
+            error_msg = result.get('error', {}).get('message', 'Unknown error')
+            raise UserError(_(
+                'Failed to configure webhooks: %s'
+            ) % error_msg)
+
+    def disable_webhooks(self):
+        """
+        Remove webhook configuration from Printful.
+
+        Returns:
+            True if successful
+        """
+        self.ensure_one()
+        headers = self._get_auth_headers()
+        url = f"{PRINTFUL_API_V2_BASE}/webhooks"
+
+        try:
+            self._make_api_delete_request(url, headers)
+            _logger.info("Successfully disabled webhooks for store %s", self.name)
+            return True
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                # Already disabled
+                return True
+            raise
 
     # ==========================================
     # V2 SHIPPING RATE METHODS
