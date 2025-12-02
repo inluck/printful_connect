@@ -1105,15 +1105,14 @@ class PrintfulPrintful(models.Model):
                                 main_category_id
                             )
                             category_cache[main_category_id] = None
-                            continue
-
-                        cat_id = self._get_or_create_category(
-                            cat_info.get('title'),
-                            cat_info.get('image_url'),
-                        )
-                        category_cache[main_category_id] = cat_id
-                        if cat_id:
-                            category_ids.append(cat_id)
+                        else:
+                            cat_id = self._get_or_create_category(
+                                cat_info.get('title'),
+                                cat_info.get('image_url'),
+                            )
+                            category_cache[main_category_id] = cat_id
+                            if cat_id:
+                                category_ids.append(cat_id)
                     else:
                         category_cache[main_category_id] = None
                 except Exception as e:
