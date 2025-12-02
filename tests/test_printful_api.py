@@ -97,13 +97,70 @@ class TestPrintfulConfig(PrintfulTestCase):
 class TestShippingInfo(PrintfulTestCase):
     """Test cases for shipping information retrieval."""
 
+    def test_get_shipping_info_uses_configured_days(self):
+        """Test shipping info uses configured estimated days from shipping method."""
+        # Create a default shipping method with estimated days
+        shipping_method = self.env['printful.shipping.method'].create({
+            'name': 'Standard Shipping',
+            'printful_config_id': self.printful_config.id,
+            'printful_method_id': 'STANDARD',
+            'is_default': True,
+            'estimated_min_days': 5,
+            'estimated_max_days': 7,
+        })
+
+        # Should use configured days without API call
+        result = self.printful_config._get_shipping_info()
+
+        self.assertEqual(result, '5-7 Business Days')
+
+    def test_get_shipping_info_min_days_only(self):
+        """Test shipping info with only min days configured."""
+        shipping_method = self.env['printful.shipping.method'].create({
+            'name': 'Standard Shipping',
+            'printful_config_id': self.printful_config.id,
+            'printful_method_id': 'STANDARD',
+            'is_default': True,
+            'estimated_min_days': 5,
+            'estimated_max_days': 0,  # Not set
+        })
+
+        result = self.printful_config._get_shipping_info()
+
+        self.assertEqual(result, '5+ Business Days')
+
+    def test_get_shipping_info_max_days_only(self):
+        """Test shipping info with only max days configured."""
+        shipping_method = self.env['printful.shipping.method'].create({
+            'name': 'Standard Shipping',
+            'printful_config_id': self.printful_config.id,
+            'printful_method_id': 'STANDARD',
+            'is_default': True,
+            'estimated_min_days': 0,  # Not set
+            'estimated_max_days': 10,
+        })
+
+        result = self.printful_config._get_shipping_info()
+
+        self.assertEqual(result, 'Up to 10 Business Days')
+
     @patch('odoo.addons.printful_connect.models.printful.requests.post')
-    def test_get_shipping_info_success(self, mock_post):
-        """Test successful shipping info retrieval."""
+    def test_get_shipping_info_api_fallback(self, mock_post):
+        """Test shipping info falls back to API when no configured days."""
         mock_post.return_value = self._create_mock_response(self.MOCK_SHIPPING_RATES)
 
-        # Set up default shipping address
+        # Set up default shipping address (required for API fallback)
         self._create_default_shipping_address()
+
+        # Create shipping method without estimated days (triggers API fallback)
+        self.env['printful.shipping.method'].create({
+            'name': 'Standard Shipping',
+            'printful_config_id': self.printful_config.id,
+            'printful_method_id': 'STANDARD',
+            'is_default': True,
+            'estimated_min_days': 0,
+            'estimated_max_days': 0,
+        })
 
         sync_variant = {
             'variant_id': 4011,
@@ -115,12 +172,14 @@ class TestShippingInfo(PrintfulTestCase):
         result = self.printful_config._get_shipping_info(sync_variant, headers)
 
         self.assertEqual(result, '3-4 Business Days')
+        mock_post.assert_called_once()
 
     @patch('odoo.addons.printful_connect.models.printful.requests.post')
-    def test_get_shipping_info_no_address(self, mock_post):
-        """Test shipping info returns None when no default address configured."""
-        # Ensure no default address is configured
+    def test_get_shipping_info_no_address_no_configured_days(self, mock_post):
+        """Test shipping info returns None when no address and no configured days."""
+        # Ensure no default address and no shipping method configured
         self.printful_config.default_address_ids.unlink()
+        self.printful_config.shipping_method_ids.unlink()
 
         sync_variant = {'variant_id': 4011}
         result = self.printful_config._get_shipping_info(sync_variant, {})
@@ -130,9 +189,12 @@ class TestShippingInfo(PrintfulTestCase):
 
     @patch('odoo.addons.printful_connect.models.printful.requests.post')
     def test_get_shipping_info_api_error(self, mock_post):
-        """Test shipping info returns None on API error."""
+        """Test shipping info returns None on API error when using fallback."""
         mock_post.side_effect = Exception('API Error')
         self._create_default_shipping_address()
+
+        # No shipping method, so it falls back to API
+        self.printful_config.shipping_method_ids.unlink()
 
         sync_variant = {'variant_id': 4011, 'retail_price': '25.00'}
         result = self.printful_config._get_shipping_info(sync_variant, {})
