@@ -688,14 +688,19 @@ class PrintfulPrintful(models.Model):
         variant_data = variant_json['result']['variant']
         variant_product_data = variant_json['result'].get('product', {})
 
-        # Update product template with brand and type for SEO (only once per template)
+        # Update product template with brand, type, and description (only once per template)
         brand = variant_product_data.get('brand', '')
         product_type = variant_product_data.get('type', '')
-        if (brand or product_type) and not product_template.printful_brand:
-            product_template.write({
+        description = variant_product_data.get('description', '')
+        if (brand or product_type or description) and not product_template.printful_brand:
+            template_vals = {
                 'printful_brand': brand,
                 'printful_type': product_type,
-            })
+            }
+            if description:
+                template_vals['description_sale'] = description
+                template_vals['website_description'] = description
+            product_template.write(template_vals)
 
         # Extract size and color
         size_value = variant_data.get('size')
