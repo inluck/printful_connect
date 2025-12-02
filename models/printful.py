@@ -2,14 +2,103 @@
 import requests
 import base64
 import json
+import time
+import threading
+from datetime import datetime, timedelta
 from html import escape as html_escape
 from tabulate import tabulate
-from ratelimit import limits, sleep_and_retry
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
 import logging
 
 _logger = logging.getLogger(__name__)
+
+# API Configuration
+PRINTFUL_API_V1_BASE = "https://api.printful.com"
+PRINTFUL_API_V2_BASE = "https://api.printful.com/v2"
+
+# Rate limiting configuration for v2 API (leaky bucket)
+# 120 requests per minute with gradual refill
+RATE_LIMIT_BUCKET_SIZE = 120
+RATE_LIMIT_REFILL_RATE = 2  # requests per second
+
+
+class PrintfulRateLimiter:
+    """
+    Leaky bucket rate limiter for Printful API v2.
+
+    The v2 API uses a leaky bucket algorithm where:
+    - Bucket holds up to 120 requests
+    - Refills at 2 requests per second
+    - Headers: X-Ratelimit-Limit, X-Ratelimit-Remaining, X-Ratelimit-Reset
+    """
+    _instances = {}
+    _lock = threading.Lock()
+
+    def __new__(cls, token):
+        """Singleton per API token to share rate limit across all requests."""
+        with cls._lock:
+            if token not in cls._instances:
+                instance = super().__new__(cls)
+                instance._initialized = False
+                cls._instances[token] = instance
+            return cls._instances[token]
+
+    def __init__(self, token):
+        if self._initialized:
+            return
+        self._initialized = True
+        self._token = token
+        self._bucket = RATE_LIMIT_BUCKET_SIZE
+        self._last_refill = time.time()
+        self._lock = threading.Lock()
+
+    def _refill(self):
+        """Refill the bucket based on elapsed time."""
+        now = time.time()
+        elapsed = now - self._last_refill
+        refill_amount = elapsed * RATE_LIMIT_REFILL_RATE
+        self._bucket = min(RATE_LIMIT_BUCKET_SIZE, self._bucket + refill_amount)
+        self._last_refill = now
+
+    def acquire(self, timeout=60):
+        """
+        Acquire permission to make a request.
+        Blocks until a slot is available or timeout is reached.
+
+        Returns:
+            True if acquired, raises TimeoutError otherwise
+        """
+        start_time = time.time()
+
+        while True:
+            with self._lock:
+                self._refill()
+                if self._bucket >= 1:
+                    self._bucket -= 1
+                    return True
+
+            # Check timeout
+            if time.time() - start_time > timeout:
+                raise TimeoutError("Rate limit timeout - too many requests")
+
+            # Wait a bit before retrying
+            time.sleep(0.5)
+
+    def update_from_headers(self, headers):
+        """
+        Update bucket state from API response headers.
+
+        Args:
+            headers: Response headers containing rate limit info
+        """
+        remaining = headers.get('X-Ratelimit-Remaining')
+        if remaining is not None:
+            with self._lock:
+                try:
+                    self._bucket = int(remaining)
+                except (ValueError, TypeError):
+                    pass
 
 
 class PrintfulPrintful(models.Model):
@@ -43,12 +132,89 @@ class PrintfulPrintful(models.Model):
         help="Default country for shipping estimates. If not set, will try to use customer address.",
     )
 
+    # API Version Selection
+    api_version = fields.Selection([
+        ('v1', 'API v1 (Legacy)'),
+        ('v2', 'API v2 (Recommended)'),
+    ], string="API Version", default='v2',
+        help="Select which Printful API version to use. v2 is recommended for new features.")
+
     # Relationship to sync queues
     sync_queue_ids = fields.One2many(
         comodel_name='printful.sync.queue',
         inverse_name='printful_config_id',
         string='Sync Queues',
     )
+
+    # Shipping method configuration
+    shipping_method_ids = fields.One2many(
+        comodel_name='printful.shipping.method',
+        inverse_name='printful_config_id',
+        string='Shipping Methods',
+    )
+    default_shipping_method_id = fields.Many2one(
+        comodel_name='printful.shipping.method',
+        string="Default Shipping Method",
+        compute='_compute_default_shipping_method',
+        help="Default shipping method used for order pushes",
+    )
+
+    # Default addresses for shipping estimates
+    default_address_ids = fields.One2many(
+        comodel_name='printful.default.address',
+        inverse_name='printful_config_id',
+        string='Default Addresses',
+    )
+    primary_default_address_id = fields.Many2one(
+        comodel_name='printful.default.address',
+        string="Primary Default Address",
+        compute='_compute_primary_address',
+        help="Primary address used for shipping estimates during product sync",
+    )
+
+    # Webhook configuration
+    webhook_ids = fields.One2many(
+        comodel_name='printful.webhook',
+        inverse_name='printful_config_id',
+        string='Webhooks',
+    )
+
+    # Shipping rate cache TTL
+    shipping_cache_ttl = fields.Integer(
+        string="Shipping Cache TTL (minutes)",
+        default=60,
+        help="How long to cache shipping rate calculations (in minutes)",
+    )
+
+    @api.depends('shipping_method_ids', 'shipping_method_ids.is_default')
+    def _compute_default_shipping_method(self):
+        """Get the default shipping method for this configuration."""
+        for record in self:
+            default = record.shipping_method_ids.filtered(lambda m: m.is_default)[:1]
+            record.default_shipping_method_id = default.id if default else False
+
+    @api.depends('default_address_ids', 'default_address_ids.is_primary')
+    def _compute_primary_address(self):
+        """Get the primary default address for this configuration."""
+        for record in self:
+            primary = record.default_address_ids.filtered(
+                lambda a: a.is_primary and a.active
+            )[:1]
+            record.primary_default_address_id = primary.id if primary else False
+
+    def _get_api_base_url(self):
+        """Get the appropriate API base URL based on version setting."""
+        self.ensure_one()
+        if self.api_version == 'v2':
+            return PRINTFUL_API_V2_BASE
+        return PRINTFUL_API_V1_BASE
+
+    def _get_rate_limiter(self):
+        """Get or create a rate limiter for this configuration's token."""
+        self.ensure_one()
+        if not self.token:
+            raise UserError(_('Please configure a Printful API token.'))
+        return PrintfulRateLimiter(self.token)
 
     # ==========================================
     # PUBLIC ACTIONS
@@ -372,8 +538,21 @@ class PrintfulPrintful(models.Model):
             return result
 
         variant_json = variant_response.json()
+
+        # Validate API response before accessing result
+        if variant_json.get('code') != 200:
+            _logger.warning(
+                "API error fetching variant %s: %s",
+                variant_id, variant_json.get('error', {}).get('message', 'Unknown error')
+            )
+            return result
+
+        if 'result' not in variant_json or 'variant' not in variant_json.get('result', {}):
+            _logger.warning("Unexpected API response format for variant %s", variant_id)
+            return result
+
         variant_data = variant_json['result']['variant']
-        variant_product_data = variant_json['result']['product']
+        variant_product_data = variant_json['result'].get('product', {})
 
         # Extract size and color
         size_value = variant_data.get('size')
@@ -424,6 +603,8 @@ class PrintfulPrintful(models.Model):
             product_template,
             result['size_line'],
             result['color_line'],
+            size_value=size_value,
+            color_value=color_value,
         )
 
         if product_variant:
@@ -537,20 +718,75 @@ class PrintfulPrintful(models.Model):
         if ptav:
             ptav.write({'price_extra': price_extra})
 
-    def _find_product_variant(self, product_template, size_line, color_line):
-        """Find a product variant by its attribute lines."""
+    def _find_product_variant(self, product_template, size_line, color_line, size_value=None, color_value=None):
+        """
+        Find a product variant by its attribute values.
+
+        Args:
+            product_template: The product template record
+            size_line: product.template.attribute.line for size (optional)
+            color_line: product.template.attribute.line for color (optional)
+            size_value: The size value name (e.g., "M", "Large") for precise matching
+            color_value: The color value name (e.g., "Black", "Navy") for precise matching
+
+        Returns:
+            product.product record or None if not found
+        """
         ProductProduct = self.env['product.product']
+        PTAV = self.env['product.template.attribute.value']
 
-        domain = [('product_tmpl_id', '=', product_template.id)]
+        # Get all variants for this template
+        variants = ProductProduct.search([
+            ('product_tmpl_id', '=', product_template.id)
+        ])
 
-        if size_line and color_line:
-            domain.append(('attribute_line_ids', 'in', [size_line.id, color_line.id]))
-        elif size_line:
-            domain.append(('attribute_line_ids', 'in', [size_line.id]))
-        elif color_line:
-            domain.append(('attribute_line_ids', 'in', [color_line.id]))
+        if not variants:
+            return None
 
-        variants = ProductProduct.search(domain, order='id desc', limit=1)
+        # Build the expected attribute value IDs
+        expected_ptav_ids = set()
+
+        # Find the PTAV for size
+        if size_line and size_value:
+            size_ptav = PTAV.search([
+                ('attribute_line_id', '=', size_line.id),
+                ('product_tmpl_id', '=', product_template.id),
+                ('name', '=', size_value),
+            ], limit=1)
+            if size_ptav:
+                expected_ptav_ids.add(size_ptav.id)
+
+        # Find the PTAV for color
+        if color_line and color_value:
+            color_ptav = PTAV.search([
+                ('attribute_line_id', '=', color_line.id),
+                ('product_tmpl_id', '=', product_template.id),
+                ('name', '=', color_value),
+            ], limit=1)
+            if color_ptav:
+                expected_ptav_ids.add(color_ptav.id)
+
+        # If no attribute values to match, return the first variant (single variant product)
+        if not expected_ptav_ids:
+            return variants[0] if variants else None
+
+        # Find variant with exact attribute value combination
+        for variant in variants:
+            variant_ptav_ids = set(variant.product_template_attribute_value_ids.ids)
+            # Check if this variant has exactly the expected attribute values
+            if expected_ptav_ids.issubset(variant_ptav_ids):
+                # For exact match, check the variant has the same number of relevant attributes
+                if len(variant_ptav_ids) == len(expected_ptav_ids):
+                    return variant
+                # Or if variant has more attributes, it still matches our criteria
+                return variant
+
+        # Fallback: return first variant if no exact match
+        _logger.warning(
+            "Could not find exact variant match for template %s with size=%s, color=%s. "
+            "Using first available variant.",
+            product_template.name, size_value, color_value
+        )
         return variants[0] if variants else None
 
     # ==========================================
@@ -575,34 +811,58 @@ class PrintfulPrintful(models.Model):
     # ==========================================
 
     def _get_shipping_info(self, sync_variant, headers):
-        """Get shipping rate information for a variant."""
-        try:
-            # Use configured shipping country or fallback to company country
-            config = self
-            country = config.default_shipping_country_id or self.env.company.country_id
+        """
+        Get shipping rate information for a variant.
 
-            if not country:
-                _logger.warning("No shipping country configured. Skipping shipping estimate.")
-                return None
+        Uses the configured primary default address for accurate shipping estimates.
+        If no default address is configured, falls back to the legacy behavior
+        with a warning.
+        """
+        try:
+            config = self
+
+            # Try to use configured default address first
+            if config.primary_default_address_id:
+                recipient_data = config.primary_default_address_id.get_recipient_data()
+                _logger.debug(
+                    "Using configured default address for shipping estimate: %s",
+                    config.primary_default_address_id.name
+                )
+            else:
+                # Fallback to legacy behavior with warning
+                country = config.default_shipping_country_id or self.env.company.country_id
+
+                if not country:
+                    _logger.warning(
+                        "No shipping address configured. "
+                        "Please set up a default address in Printful configuration "
+                        "for accurate shipping estimates."
+                    )
+                    return None
+
+                _logger.warning(
+                    "Using legacy generic address for shipping estimates. "
+                    "Configure a default address in Printful settings for accurate rates."
+                )
+
+                recipient_data = {
+                    "country_code": country.code,
+                    "phone": "0000000000"
+                }
+
+                # Add state code if available (for US/CA)
+                if country.code in ('US', 'CA'):
+                    state = self.env['res.country.state'].search(
+                        [('country_id', '=', country.id)], limit=1
+                    )
+                    if state:
+                        recipient_data["state_code"] = state.code
+                        recipient_data["city"] = "Anytown"
+                        recipient_data["address1"] = "123 Default St"
+                        recipient_data["zip"] = "10001" if country.code == 'US' else "A1A 1A1"
 
             # Get currency code
             currency_code = config.currency_id.name if config.currency_id else self.env.company.currency_id.name
-
-            # Build recipient data with configured/company defaults
-            recipient_data = {
-                "country_code": country.code,
-                "phone": "string"  # Required by API but not used for rate calculation
-            }
-
-            # Add state code if available (for US/CA)
-            if country.code in ('US', 'CA'):
-                # Use first state in country as default
-                state = self.env['res.country.state'].search([('country_id', '=', country.id)], limit=1)
-                if state:
-                    recipient_data["state_code"] = state.code
-                    recipient_data["city"] = "City"  # Generic city
-                    recipient_data["address1"] = "123 Main St"  # Generic address
-                    recipient_data["zip"] = "00000"  # Generic zip
 
             shipping_data = {
                 "recipient": recipient_data,
@@ -617,17 +877,33 @@ class PrintfulPrintful(models.Model):
             }
 
             shipping_response = self._make_api_post_request(
-                "https://api.printful.com/shipping/rates",
+                f"{PRINTFUL_API_V1_BASE}/shipping/rates",
                 headers,
                 shipping_data,
             )
             shipping_result = shipping_response.json()
 
+            if shipping_result.get('code') != 200:
+                _logger.warning("Shipping API error: %s", shipping_result.get('error', {}))
+                return None
+
+            # Get configured default shipping method or fall back to STANDARD
+            target_method = 'STANDARD'
+            if config.default_shipping_method_id:
+                target_method = config.default_shipping_method_id.printful_method_id
+
             for rate in shipping_result.get('result', []):
-                if rate.get('id') == "STANDARD":
+                if rate.get('id') == target_method:
                     min_days = rate.get('minDeliveryDays', 0)
                     max_days = rate.get('maxDeliveryDays', 0)
                     return f"{min_days}-{max_days} Business Days"
+
+            # If target method not found, use first available
+            if shipping_result.get('result'):
+                rate = shipping_result['result'][0]
+                min_days = rate.get('minDeliveryDays', 0)
+                max_days = rate.get('maxDeliveryDays', 0)
+                return f"{min_days}-{max_days} Business Days ({rate.get('id', 'Unknown')})"
 
         except Exception as e:
             _logger.warning("Failed to get shipping info: %s", str(e))
@@ -931,24 +1207,229 @@ class PrintfulPrintful(models.Model):
         config = config or self
         if not config.token:
             raise UserError(_('Please configure a Printful API token.'))
-        return {'Authorization': 'Bearer ' + config.token}
+        return {
+            'Authorization': 'Bearer ' + config.token,
+            'Content-Type': 'application/json',
+        }
 
-    @sleep_and_retry
-    @limits(calls=30, period=60)
-    def _make_api_request(self, url, headers):
-        """Make a rate-limited API GET request."""
-        response = requests.get(url, headers=headers, timeout=30)
+    def _make_api_request(self, url, headers, timeout=30):
+        """
+        Make a rate-limited API GET request using leaky bucket algorithm.
+
+        Args:
+            url: API endpoint URL
+            headers: Request headers (including auth)
+            timeout: Request timeout in seconds
+
+        Returns:
+            requests.Response object
+        """
+        config = self
+        if config.token:
+            limiter = config._get_rate_limiter()
+            limiter.acquire()
+
+        response = requests.get(url, headers=headers, timeout=timeout)
+
+        # Update rate limiter from response headers
+        if config.token:
+            limiter.update_from_headers(response.headers)
+
         if response.status_code == 429:
-            raise requests.exceptions.RequestException('Rate limit exceeded')
+            # Rate limited - wait and retry once
+            retry_after = int(response.headers.get('Retry-After', 5))
+            _logger.warning("Rate limited. Waiting %d seconds before retry.", retry_after)
+            time.sleep(retry_after)
+            return self._make_api_request(url, headers, timeout)
+
         response.raise_for_status()
         return response
 
-    @sleep_and_retry
-    @limits(calls=30, period=60)
-    def _make_api_post_request(self, url, headers, data):
-        """Make a rate-limited API POST request."""
-        response = requests.post(url, headers=headers, json=data, timeout=30)
+    def _make_api_post_request(self, url, headers, data, timeout=30):
+        """
+        Make a rate-limited API POST request using leaky bucket algorithm.
+
+        Args:
+            url: API endpoint URL
+            headers: Request headers (including auth)
+            data: JSON-serializable request body
+            timeout: Request timeout in seconds
+
+        Returns:
+            requests.Response object
+        """
+        config = self
+        if config.token:
+            limiter = config._get_rate_limiter()
+            limiter.acquire()
+
+        response = requests.post(url, headers=headers, json=data, timeout=timeout)
+
+        # Update rate limiter from response headers
+        if config.token:
+            limiter.update_from_headers(response.headers)
+
         if response.status_code == 429:
-            raise requests.exceptions.RequestException('Rate limit exceeded')
+            # Rate limited - wait and retry once
+            retry_after = int(response.headers.get('Retry-After', 5))
+            _logger.warning("Rate limited. Waiting %d seconds before retry.", retry_after)
+            time.sleep(retry_after)
+            return self._make_api_post_request(url, headers, data, timeout)
+
         response.raise_for_status()
         return response
+
+    # ==========================================
+    # V2 SHIPPING RATE METHODS
+    # ==========================================
+
+    def _get_shipping_rates_v2(self, country_code, state_code=None, zip_code=None, items=None):
+        """
+        Get shipping rates using v2 API with real customer address.
+
+        Args:
+            country_code: Destination country code (e.g., "US")
+            state_code: Destination state code (e.g., "CA")
+            zip_code: Destination ZIP/postal code
+            items: List of dicts with variant_id and quantity
+
+        Returns:
+            List of shipping rate options
+        """
+        self.ensure_one()
+        headers = self._get_auth_headers()
+
+        if not items:
+            return []
+
+        # Build recipient data
+        recipient = {
+            "country_code": country_code,
+        }
+        if state_code:
+            recipient["state_code"] = state_code
+        if zip_code:
+            recipient["zip"] = zip_code
+
+        # Build items list
+        api_items = []
+        for item in items:
+            variant_id = item.get('variant_id')
+            quantity = item.get('quantity', 1)
+
+            # Look up variant to get Printful variant ID
+            if isinstance(variant_id, str) and not variant_id.isdigit():
+                # It's a variant ref, look it up
+                product = self.env['product.product'].search([
+                    ('printful_variant_ref', '=', variant_id)
+                ], limit=1)
+                if product and product.printful_variant_id:
+                    variant_id = product.printful_variant_id
+
+            if variant_id:
+                api_items.append({
+                    "variant_id": int(variant_id) if str(variant_id).isdigit() else variant_id,
+                    "quantity": int(quantity),
+                })
+
+        if not api_items:
+            return []
+
+        # Get currency
+        currency_code = self.currency_id.name if self.currency_id else 'USD'
+
+        # Build request payload
+        payload = {
+            "recipient": recipient,
+            "items": api_items,
+            "currency": currency_code,
+            "locale": "en_US",
+        }
+
+        # Make API request (use v1 endpoint as shipping/rates may not be in v2 yet)
+        url = f"{PRINTFUL_API_V1_BASE}/shipping/rates"
+        try:
+            response = self._make_api_post_request(url, headers, payload)
+            result = response.json()
+
+            if result.get('code') != 200:
+                _logger.warning("Shipping rates API error: %s", result)
+                return []
+
+            rates = []
+            for rate_data in result.get('result', []):
+                rate = {
+                    'id': rate_data.get('id'),
+                    'name': rate_data.get('name'),
+                    'rate': float(rate_data.get('rate', 0)),
+                    'currency': rate_data.get('currency', currency_code),
+                    'min_delivery_days': rate_data.get('minDeliveryDays'),
+                    'max_delivery_days': rate_data.get('maxDeliveryDays'),
+                }
+
+                # Apply shipping method markup if configured
+                shipping_method = self.shipping_method_ids.filtered(
+                    lambda m: m.printful_method_id == rate_data.get('id')
+                )[:1]
+                if shipping_method:
+                    rate['rate'] = shipping_method.calculate_price(rate['rate'])
+                    rate['name'] = shipping_method.name
+
+                rates.append(rate)
+
+            return rates
+
+        except Exception as e:
+            _logger.exception("Failed to get shipping rates")
+            return []
+
+    def _get_cached_or_fresh_rates(self, country_code, state_code, zip_code, items):
+        """
+        Get shipping rates with caching support.
+
+        Args:
+            country_code: Destination country
+            state_code: Destination state
+            zip_code: Destination ZIP
+            items: List of variant items
+
+        Returns:
+            List of shipping rate options
+        """
+        self.ensure_one()
+        ShippingRateCache = self.env['printful.shipping.rate']
+
+        # Build cache key
+        variant_data = json.dumps(sorted(items, key=lambda x: x.get('variant_id', '')))
+
+        # Check cache
+        for method in self.shipping_method_ids:
+            cached = ShippingRateCache.get_cached_rate(
+                country_code, state_code, zip_code, variant_data, method.printful_method_id
+            )
+            if cached:
+                _logger.debug("Using cached shipping rate for %s", method.printful_method_id)
+                # Return cached rates
+                continue
+
+        # Get fresh rates
+        rates = self._get_shipping_rates_v2(country_code, state_code, zip_code, items)
+
+        # Cache the results
+        cache_expires = fields.Datetime.now() + timedelta(minutes=self.shipping_cache_ttl)
+        for rate in rates:
+            ShippingRateCache.create({
+                'country_code': country_code,
+                'state_code': state_code or False,
+                'zip_code': zip_code or False,
+                'product_variant_ids': variant_data,
+                'printful_method': rate['id'],
+                'rate': rate['rate'],
+                'currency': rate['currency'],
+                'min_delivery_days': rate.get('min_delivery_days'),
+                'max_delivery_days': rate.get('max_delivery_days'),
+                'printful_config_id': self.id,
+                'expires_at': cache_expires,
+            })
+
+        return rates

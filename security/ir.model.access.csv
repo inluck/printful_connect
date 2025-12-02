@@ -12,3 +12,19 @@ access_printful_sync_queue_item_user,printful.sync.queue.item user,model_printfu
 access_product_template_user,product.template user,model_product_template,stock.group_stock_user,1,1,1,0
 access_product_product_user,product.product user,model_product_product,stock.group_stock_user,1,1,1,0
 access_product_public_category_user,product.public.category user,model_product_public_category,stock.group_stock_user,1,1,1,0
+# Shipping Methods - Admins only for config, managers can view
+access_printful_shipping_method_admin,printful.shipping.method admin,model_printful_shipping_method,printful_connect.group_printful_admin,1,1,1,1
+access_printful_shipping_method_manager,printful.shipping.method manager,model_printful_shipping_method,printful_connect.group_printful_manager,1,0,0,0
+# Shipping Rate Cache - System managed
+access_printful_shipping_rate_admin,printful.shipping.rate admin,model_printful_shipping_rate,printful_connect.group_printful_admin,1,1,1,1
+access_printful_shipping_rate_manager,printful.shipping.rate manager,model_printful_shipping_rate,printful_connect.group_printful_manager,1,0,0,0
+# Default Addresses - Admins only for config
+access_printful_default_address_admin,printful.default.address admin,model_printful_default_address,printful_connect.group_printful_admin,1,1,1,1
+access_printful_default_address_manager,printful.default.address manager,model_printful_default_address,printful_connect.group_printful_manager,1,0,0,0
+# Webhook Configuration - Admins only
+access_printful_webhook_admin,printful.webhook admin,model_printful_webhook,printful_connect.group_printful_admin,1,1,1,1
+access_printful_webhook_manager,printful.webhook manager,model_printful_webhook,printful_connect.group_printful_manager,1,0,0,0
+# Webhook Events - Managers can view and retry, users can view
+access_printful_webhook_event_admin,printful.webhook.event admin,model_printful_webhook_event,printful_connect.group_printful_admin,1,1,1,1
+access_printful_webhook_event_manager,printful.webhook.event manager,model_printful_webhook_event,printful_connect.group_printful_manager,1,1,0,0
+access_printful_webhook_event_user,printful.webhook.event user,model_printful_webhook_event,printful_connect.group_printful_user,1,0,0,0

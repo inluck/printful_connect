@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Webhook Event Views -->
+    <record id="view_printful_webhook_event_tree" model="ir.ui.view">
+        <field name="name">printful.webhook.event.tree</field>
+        <field name="model">printful.webhook.event</field>
+        <field name="arch" type="xml">
+            <tree decoration-danger="state=='failed'" decoration-warning="state=='pending'" decoration-muted="state=='ignored'">
+                <field name="create_date"/>
+                <field name="name"/>
+                <field name="event_type"/>
+                <field name="webhook_id"/>
+                <field name="state"/>
+                <field name="sale_order_id" optional="show"/>
+                <field name="product_template_id" optional="hide"/>
+                <field name="retry_count" optional="hide"/>
+                <field name="processed_at" optional="hide"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="view_printful_webhook_event_form" model="ir.ui.view">
+        <field name="name">printful.webhook.event.form</field>
+        <field name="model">printful.webhook.event</field>
+        <field name="arch" type="xml">
+            <form string="Webhook Event">
+                <header>
+                    <button name="action_retry" type="object" string="Retry" class="btn-primary" invisible="state != 'failed'"/>
+                    <button name="action_ignore" type="object" string="Ignore" class="btn-secondary" invisible="state not in ('pending', 'failed')"/>
+                    <field name="state" widget="statusbar" statusbar_visible="pending,processing,done"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group string="Event Details">
+                            <field name="name"/>
+                            <field name="event_type"/>
+                            <field name="webhook_id"/>
+                            <field name="printful_config_id"/>
+                        </group>
+                        <group string="Processing">
+                            <field name="state"/>
+                            <field name="retry_count"/>
+                            <field name="processed_at"/>
+                        </group>
+                    </group>
+                    <group string="Related Records">
+                        <group>
+                            <field name="sale_order_id"/>
+                        </group>
+                        <group>
+                            <field name="product_template_id"/>
+                        </group>
+                    </group>
+                    <group string="Error" invisible="not error_message">
+                        <field name="error_message" nolabel="1" colspan="2"/>
+                    </group>
+                    <group string="Payload">
+                        <field name="payload" nolabel="1" colspan="2" widget="ace" options="{'mode': 'json'}"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_printful_webhook_event_search" model="ir.ui.view">
+        <field name="name">printful.webhook.event.search</field>
+        <field name="model">printful.webhook.event</field>
+        <field name="arch" type="xml">
+            <search string="Webhook Events">
+                <field name="name"/>
+                <field name="event_type"/>
+                <field name="sale_order_id"/>
+                <separator/>
+                <filter name="pending" string="Pending" domain="[('state', '=', 'pending')]"/>
+                <filter name="failed" string="Failed" domain="[('state', '=', 'failed')]"/>
+                <filter name="done" string="Processed" domain="[('state', '=', 'done')]"/>
+                <separator/>
+                <filter name="order_events" string="Order Events" domain="[('event_type', 'in', ['order_created', 'order_updated', 'order_failed', 'order_canceled'])]"/>
+                <filter name="shipping_events" string="Shipping Events" domain="[('event_type', 'in', ['package_shipped', 'package_returned'])]"/>
+                <filter name="product_events" string="Product Events" domain="[('event_type', 'in', ['product_synced', 'product_updated', 'product_deleted', 'stock_updated'])]"/>
+                <separator/>
+                <filter name="today" string="Today" domain="[('create_date', '&gt;=', (context_today()).strftime('%Y-%m-%d'))]"/>
+                <group expand="0" string="Group By">
+                    <filter name="group_state" string="State" context="{'group_by': 'state'}"/>
+                    <filter name="group_type" string="Event Type" context="{'group_by': 'event_type'}"/>
+                    <filter name="group_webhook" string="Webhook" context="{'group_by': 'webhook_id'}"/>
+                    <filter name="group_date" string="Date" context="{'group_by': 'create_date:day'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="printful_webhook_event_action" model="ir.actions.act_window">
+        <field name="name">Webhook Events</field>
+        <field name="res_model">printful.webhook.event</field>
+        <field name="view_mode">tree,form</field>
+        <field name="search_view_id" ref="view_printful_webhook_event_search"/>
+        <field name="context">{'search_default_today': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No webhook events received yet
+            </p>
+            <p>
+                Configure webhooks in your Printful store settings to start receiving
+                real-time updates about orders, shipments, and product changes.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu item for Webhook Events -->
+    <menuitem id="menu_printful_webhook_events"
+              name="Webhook Events"
+              action="printful_webhook_event_action"
+              parent="stock.menu_stock_config_settings"
+              sequence="22"/>
+</odoo>
