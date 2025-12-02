@@ -104,20 +104,48 @@ class PrintfulShippingMethod(models.Model):
             base_price: The base price from Printful API
 
         Returns:
-            Final price after applying markup and surcharge
+            Final price after applying markup and surcharge (minimum 0.00)
         """
         self.ensure_one()
-        price = float(base_price)
 
-        # Apply percentage markup
+        # Validate base_price - treat negative/invalid as zero with warning
+        try:
+            price = float(base_price)
+            if price < 0:
+                _logger.warning(
+                    "Shipping method %s received negative base_price %.2f, treating as 0",
+                    self.name, price
+                )
+                price = 0.0
+        except (ValueError, TypeError):
+            _logger.warning(
+                "Shipping method %s received invalid base_price %r, treating as 0",
+                self.name, base_price
+            )
+            price = 0.0
+
+        # Apply percentage markup (clamp to prevent extreme negative results)
         if self.percentage_markup:
-            price *= (1 + self.percentage_markup / 100)
+            # Prevent markup from creating negative price (min multiplier is 0)
+            multiplier = max(0, 1 + self.percentage_markup / 100)
+            price *= multiplier
 
         # Apply fixed surcharge
         if self.fixed_surcharge:
             price += self.fixed_surcharge
 
-        return round(price, 2)
+        # Ensure final price is never negative
+        final_price = max(0.0, round(price, 2))
+
+        if final_price == 0 and (base_price or self.fixed_surcharge):
+            _logger.warning(
+                "Shipping method %s calculated zero price from base=%.2f, "
+                "markup=%.1f%%, surcharge=%.2f. Check configuration.",
+                self.name, float(base_price or 0),
+                self.percentage_markup or 0, self.fixed_surcharge or 0
+            )
+
+        return final_price
 
 
 class PrintfulShippingRate(models.Model):

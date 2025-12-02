@@ -1244,10 +1244,13 @@ class PrintfulPrintful(models.Model):
 
         # Find or create customer (deduplicate by email)
         recipient = order.get('recipient', {})
-        customer_email = recipient.get('email', '').strip().lower()
+        # Normalize email to lowercase for consistent storage and lookup
+        # This prevents duplicate customers with "John@Example.com" vs "john@example.com"
+        raw_email = recipient.get('email', '').strip()
+        customer_email = raw_email.lower() if raw_email else ''
         customer = None
 
-        # Try to find existing customer by email first
+        # Try to find existing customer by email first (case-insensitive search)
         if customer_email:
             customer = Partner.search([
                 ('email', '=ilike', customer_email),
@@ -1285,7 +1288,8 @@ class PrintfulPrintful(models.Model):
                 'state_id': state.id if state else False,
                 'country_id': country.id if country else False,
                 'zip': recipient.get('zip', ''),
-                'email': recipient.get('email', ''),
+                # Store normalized lowercase email for consistent lookups
+                'email': customer_email,
                 'phone': recipient.get('phone', ''),
                 'tax_number': str(recipient.get('tax_number', '')),
                 'company': recipient.get('company', ''),
