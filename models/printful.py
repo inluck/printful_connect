@@ -173,11 +173,6 @@ class PrintfulPrintful(models.Model):
         default=lambda self: self.env.company.currency_id,
         help="Currency used for Printful pricing. Defaults to company currency.",
     )
-    default_shipping_country_id = fields.Many2one(
-        comodel_name="res.country",
-        string="Default Shipping Country",
-        help="Default country for shipping estimates. If not set, will try to use customer address.",
-    )
 
     # API Version Selection
     api_version = fields.Selection([
@@ -693,14 +688,19 @@ class PrintfulPrintful(models.Model):
         variant_data = variant_json['result']['variant']
         variant_product_data = variant_json['result'].get('product', {})
 
-        # Update product template with brand and type for SEO (only once per template)
+        # Update product template with brand, type, and description (only once per template)
         brand = variant_product_data.get('brand', '')
         product_type = variant_product_data.get('type', '')
-        if (brand or product_type) and not product_template.printful_brand:
-            product_template.write({
+        description = variant_product_data.get('description', '')
+        if (brand or product_type or description) and not product_template.printful_brand:
+            template_vals = {
                 'printful_brand': brand,
                 'printful_type': product_type,
-            })
+            }
+            if description:
+                template_vals['description_sale'] = description
+                template_vals['website_description'] = description
+            product_template.write(template_vals)
 
         # Extract size and color
         size_value = variant_data.get('size')
@@ -977,55 +977,28 @@ class PrintfulPrintful(models.Model):
         """
         Get shipping rate information for a variant.
 
-        Uses the configured primary default address for accurate shipping estimates.
-        If no default address is configured, falls back to the legacy behavior
-        with a warning.
+        Requires a configured primary default address for accurate shipping estimates.
+        Returns delivery time range string (e.g., "5-7 Business Days") or None.
+
+        Args:
+            sync_variant: Dict with variant_id, external_id, retail_price
+            headers: API auth headers
+
+        Returns:
+            Delivery time string or None if unavailable
         """
+        self.ensure_one()
+
+        if not self.primary_default_address_id:
+            _logger.debug(
+                "No default address configured - skipping shipping estimate. "
+                "Configure a default address in Printful settings for shipping info."
+            )
+            return None
+
         try:
-            config = self
-
-            # Try to use configured default address first
-            if config.primary_default_address_id:
-                recipient_data = config.primary_default_address_id.get_recipient_data()
-                _logger.debug(
-                    "Using configured default address for shipping estimate: %s",
-                    config.primary_default_address_id.name
-                )
-            else:
-                # Fallback to legacy behavior with warning
-                country = config.default_shipping_country_id or self.env.company.country_id
-
-                if not country:
-                    _logger.warning(
-                        "No shipping address configured. "
-                        "Please set up a default address in Printful configuration "
-                        "for accurate shipping estimates."
-                    )
-                    return None
-
-                _logger.warning(
-                    "Using legacy generic address for shipping estimates. "
-                    "Configure a default address in Printful settings for accurate rates."
-                )
-
-                recipient_data = {
-                    "country_code": country.code,
-                    "phone": "0000000000"
-                }
-
-                # Add state code if available (for US/CA)
-                if country.code in ('US', 'CA'):
-                    state = self.env['res.country.state'].search(
-                        [('country_id', '=', country.id)], limit=1
-                    )
-                    if state:
-                        recipient_data["state_code"] = state.code
-                        recipient_data["city"] = "Anytown"
-                        recipient_data["address1"] = "123 Default St"
-                        recipient_data["zip"] = "10001" if country.code == 'US' else "A1A 1A1"
-
-            # Get currency code
-            currency_code = config.currency_id.name if config.currency_id else self.env.company.currency_id.name
+            recipient_data = self.primary_default_address_id.get_recipient_data()
+            currency_code = self.currency_id.name if self.currency_id else self.env.company.currency_id.name
 
             shipping_data = {
                 "recipient": recipient_data,
@@ -1039,34 +1012,35 @@ class PrintfulPrintful(models.Model):
                 "locale": "en_US"
             }
 
-            shipping_response = self._make_api_post_request(
+            response = self._make_api_post_request(
                 f"{PRINTFUL_API_V1_BASE}/shipping/rates",
                 headers,
                 shipping_data,
             )
-            shipping_result = shipping_response.json()
+            result = response.json()
 
-            if shipping_result.get('code') != 200:
-                _logger.warning("Shipping API error: %s", shipping_result.get('error', {}))
+            if result.get('code') != 200:
+                _logger.warning("Shipping API error: %s", result.get('error', {}))
                 return None
 
             # Get configured default shipping method or fall back to STANDARD
             target_method = 'STANDARD'
-            if config.default_shipping_method_id:
-                target_method = config.default_shipping_method_id.printful_method_id
+            if self.default_shipping_method_id:
+                target_method = self.default_shipping_method_id.printful_method_id
 
-            for rate in shipping_result.get('result', []):
+            # Find matching rate
+            for rate in result.get('result', []):
                 if rate.get('id') == target_method:
                     min_days = rate.get('minDeliveryDays', 0)
                     max_days = rate.get('maxDeliveryDays', 0)
                     return f"{min_days}-{max_days} Business Days"
 
-            # If target method not found, use first available
-            if shipping_result.get('result'):
-                rate = shipping_result['result'][0]
+            # Use first available rate if target method not found
+            if result.get('result'):
+                rate = result['result'][0]
                 min_days = rate.get('minDeliveryDays', 0)
                 max_days = rate.get('maxDeliveryDays', 0)
-                return f"{min_days}-{max_days} Business Days ({rate.get('id', 'Unknown')})"
+                return f"{min_days}-{max_days} Business Days"
 
         except Exception as e:
             _logger.warning("Failed to get shipping info: %s", str(e))
