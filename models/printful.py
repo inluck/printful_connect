@@ -1180,57 +1180,12 @@ class PrintfulPrintful(models.Model):
     # SHIPPING & CATEGORY HELPERS
     # ==========================================
 
-    def _get_shipping_info(self, sync_variant=None, headers=None):
+    def _get_shipping_info(self, sync_variant, headers):
         """
-        Get shipping delivery estimate string for product display.
+        Get shipping rate information for a variant.
 
-        Priority order:
-        1. Use configured estimated days from default shipping method (fastest, most reliable)
-        2. Fall back to Printful API call if configured days are not set
-
-        Args:
-            sync_variant: Dict with variant_id, external_id, retail_price (optional, for API fallback)
-            headers: API auth headers (optional, for API fallback)
-
-        Returns:
-            Delivery time string (e.g., "5-7 Business Days") or None if unavailable
-        """
-        self.ensure_one()
-
-        # Primary method: Use configured delivery estimates from shipping method
-        # This is faster and more reliable than API calls
-        if self.default_shipping_method_id:
-            method = self.default_shipping_method_id
-            if method.estimated_min_days and method.estimated_max_days:
-                return f"{method.estimated_min_days}-{method.estimated_max_days} Business Days"
-            elif method.estimated_min_days:
-                return f"{method.estimated_min_days}+ Business Days"
-            elif method.estimated_max_days:
-                return f"Up to {method.estimated_max_days} Business Days"
-
-        # Fallback: API call to Printful (requires address and variant data)
-        if not self.primary_default_address_id:
-            _logger.info(
-                "No shipping estimate available: Configure estimated delivery days on "
-                "the default shipping method, or set up a primary default address for API-based estimates."
-            )
-            return None
-
-        if not sync_variant or not headers:
-            _logger.debug(
-                "No variant data provided for API-based shipping estimate. "
-                "Configure estimated days on the default shipping method for faster syncs."
-            )
-            return None
-
-        return self._get_shipping_info_from_api(sync_variant, headers)
-
-    def _get_shipping_info_from_api(self, sync_variant, headers):
-        """
-        Get shipping estimate from Printful API.
-
-        This is a fallback when configured estimated days are not set.
-        Makes a POST request to Printful's shipping/rates endpoint.
+        Requires a configured primary default address for accurate shipping estimates.
+        Returns delivery time range string (e.g., "5-7 Business Days") or None.
 
         Args:
             sync_variant: Dict with variant_id, external_id, retail_price
@@ -1241,34 +1196,28 @@ class PrintfulPrintful(models.Model):
         """
         self.ensure_one()
 
+        if not self.primary_default_address_id:
+            _logger.debug(
+                "No default address configured - skipping shipping estimate. "
+                "Configure a default address in Printful settings for shipping info."
+            )
+            return None
+
         try:
             recipient_data = self.primary_default_address_id.get_recipient_data()
             currency_code = self.currency_id.name if self.currency_id else self.env.company.currency_id.name
 
-            # Validate required variant data
-            variant_id = sync_variant.get('variant_id')
-            if not variant_id:
-                _logger.warning(
-                    "Cannot get shipping rates: variant_id missing from sync_variant data"
-                )
-                return None
-
             shipping_data = {
                 "recipient": recipient_data,
                 "items": [{
-                    "variant_id": variant_id,
+                    "variant_id": sync_variant.get('variant_id'),
                     "external_variant_id": sync_variant.get('external_id'),
                     "quantity": 1,
-                    "value": str(sync_variant.get('retail_price', '0'))
+                    "value": sync_variant.get('retail_price', '0')
                 }],
                 "currency": currency_code,
                 "locale": "en_US"
             }
-
-            _logger.debug(
-                "Fetching shipping rates for variant %s to %s",
-                variant_id, recipient_data.get('country_code')
-            )
 
             response = self._make_api_post_request(
                 f"{PRINTFUL_API_V1_BASE}/shipping/rates",
@@ -1278,21 +1227,7 @@ class PrintfulPrintful(models.Model):
             result = response.json()
 
             if result.get('code') != 200:
-                error_info = result.get('error', {})
-                _logger.warning(
-                    "Printful shipping API error for variant %s: %s - %s",
-                    variant_id,
-                    error_info.get('code', 'unknown'),
-                    error_info.get('message', result.get('result', 'Unknown error'))
-                )
-                return None
-
-            rates = result.get('result', [])
-            if not rates:
-                _logger.warning(
-                    "No shipping rates returned for variant %s to %s",
-                    variant_id, recipient_data.get('country_code')
-                )
+                _logger.warning("Shipping API error: %s", result.get('error', {}))
                 return None
 
             # Get configured default shipping method or fall back to STANDARD
@@ -1301,48 +1236,21 @@ class PrintfulPrintful(models.Model):
                 target_method = self.default_shipping_method_id.printful_method_id
 
             # Find matching rate
-            for rate in rates:
+            for rate in result.get('result', []):
                 if rate.get('id') == target_method:
                     min_days = rate.get('minDeliveryDays', 0)
                     max_days = rate.get('maxDeliveryDays', 0)
-                    if min_days and max_days:
-                        return f"{min_days}-{max_days} Business Days"
-                    elif min_days:
-                        return f"{min_days}+ Business Days"
-                    elif max_days:
-                        return f"Up to {max_days} Business Days"
+                    return f"{min_days}-{max_days} Business Days"
 
             # Use first available rate if target method not found
-            _logger.debug(
-                "Shipping method %s not available for variant %s, using first available rate",
-                target_method, variant_id
-            )
-            rate = rates[0]
-            min_days = rate.get('minDeliveryDays', 0)
-            max_days = rate.get('maxDeliveryDays', 0)
-            if min_days and max_days:
+            if result.get('result'):
+                rate = result['result'][0]
+                min_days = rate.get('minDeliveryDays', 0)
+                max_days = rate.get('maxDeliveryDays', 0)
                 return f"{min_days}-{max_days} Business Days"
-            elif min_days:
-                return f"{min_days}+ Business Days"
-            elif max_days:
-                return f"Up to {max_days} Business Days"
 
-            _logger.warning(
-                "Shipping rate for variant %s has no delivery day estimates",
-                variant_id
-            )
-            return None
-
-        except requests.exceptions.RequestException as e:
-            _logger.warning(
-                "Network error fetching shipping rates for variant %s: %s",
-                sync_variant.get('variant_id'), str(e)
-            )
         except Exception as e:
-            _logger.warning(
-                "Failed to get shipping info for variant %s: %s",
-                sync_variant.get('variant_id'), str(e)
-            )
+            _logger.warning("Failed to get shipping info: %s", str(e))
 
         return None
 
