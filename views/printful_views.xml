@@ -11,6 +11,19 @@
                             class="btn-primary"
                             string="Create Sync Queue"
                             icon="fa-plus"/>
+                    <button name="action_setup_webhooks"
+                            type="object"
+                            class="btn-primary"
+                            string="Setup Webhooks"
+                            icon="fa-bell"
+                            invisible="webhook_registered"/>
+                    <button name="action_disable_webhooks"
+                            type="object"
+                            class="btn-secondary"
+                            string="Disable Webhooks"
+                            icon="fa-bell-slash"
+                            invisible="not webhook_registered"
+                            confirm="This will disable all webhook notifications from Printful. Continue?"/>
                     <button name="action_get_printful_products"
                             type="object"
                             class="btn-secondary"
@@ -111,84 +124,38 @@
                             </field>
                         </page>
                         <page string="Webhooks" name="webhooks">
-                            <div class="alert alert-info" role="alert">
-                                <strong>Webhooks</strong> allow Printful to notify Odoo about order status changes, shipments, and product updates in real-time.
-                                Click "Register with Printful" to automatically configure the webhook - no manual setup required!
+                            <field name="webhook_registered" invisible="1"/>
+                            <div class="alert alert-success" role="alert" invisible="not webhook_registered">
+                                <strong>Webhooks Active</strong> - Real-time notifications are enabled. Printful will automatically
+                                notify Odoo about order status changes, shipments, and product updates.
                             </div>
-                            <field name="webhook_ids">
-                                <list>
-                                    <field name="name"/>
-                                    <field name="is_registered" widget="boolean"/>
-                                    <field name="webhook_url"/>
-                                    <field name="last_received_at"/>
-                                    <field name="events_received_count"/>
-                                    <field name="events_failed_count"/>
-                                    <field name="active"/>
-                                </list>
-                                <form>
-                                    <header>
-                                        <button name="action_register_webhook" type="object" string="Register with Printful" class="btn-primary" icon="fa-cloud-upload"/>
-                                        <button name="action_unregister_webhook" type="object" string="Unregister" class="btn-secondary" icon="fa-cloud-download" invisible="not is_registered"/>
-                                        <button name="action_sync_webhook_status" type="object" string="Sync Status" class="btn-secondary" icon="fa-refresh"/>
-                                    </header>
-                                    <sheet>
-                                        <div class="oe_button_box" name="button_box">
-                                            <button class="oe_stat_button" disabled="1" icon="fa-check-circle" invisible="not is_registered">
-                                                <div class="o_stat_info">
-                                                    <span class="o_stat_text text-success">Registered</span>
-                                                </div>
-                                            </button>
-                                            <button class="oe_stat_button" disabled="1" icon="fa-times-circle" invisible="is_registered">
-                                                <div class="o_stat_info">
-                                                    <span class="o_stat_text text-muted">Not Registered</span>
-                                                </div>
-                                            </button>
-                                        </div>
-                                        <group>
-                                            <group string="Configuration">
-                                                <field name="name"/>
-                                                <field name="active"/>
-                                                <field name="webhook_url" readonly="1" widget="CopyClipboardChar"/>
-                                                <field name="expires_at"/>
-                                            </group>
-                                            <group string="Registration Status">
-                                                <field name="is_registered" readonly="1"/>
-                                                <field name="registered_at" readonly="1"/>
-                                                <field name="webhook_secret" password="True" readonly="1"/>
-                                                <field name="public_key" readonly="1" invisible="not public_key"/>
-                                            </group>
-                                        </group>
-                                        <group string="Subscribed Events">
-                                            <group>
-                                                <field name="event_order_created"/>
-                                                <field name="event_order_updated"/>
-                                                <field name="event_order_failed"/>
-                                                <field name="event_order_canceled"/>
-                                                <field name="event_package_shipped"/>
-                                            </group>
-                                            <group>
-                                                <field name="event_package_returned"/>
-                                                <field name="event_product_synced"/>
-                                                <field name="event_product_updated"/>
-                                                <field name="event_product_deleted"/>
-                                                <field name="event_stock_updated"/>
-                                            </group>
-                                        </group>
-                                        <group string="Statistics">
-                                            <group>
-                                                <field name="last_received_at"/>
-                                                <field name="events_received_count"/>
-                                            </group>
-                                            <group>
-                                                <field name="events_failed_count"/>
-                                            </group>
-                                        </group>
-                                    </sheet>
-                                    <footer>
-                                        <button name="action_test_webhook" type="object" string="Show Webhook URL (Manual)" class="btn-link"/>
-                                    </footer>
-                                </form>
-                            </field>
+                            <div class="alert alert-warning" role="alert" invisible="webhook_registered">
+                                <strong>Webhooks Not Configured</strong> - Click "Setup Webhooks" in the header to enable
+                                real-time notifications from Printful.
+                            </div>
+                            <group invisible="not webhook_registered">
+                                <group string="Webhook Status">
+                                    <field name="webhook_id" readonly="1" string="Configuration"/>
+                                </group>
+                            </group>
+                            <group string="Webhook Events" invisible="not webhook_ids">
+                                <field name="webhook_ids" nolabel="1" readonly="1">
+                                    <list>
+                                        <field name="name"/>
+                                        <field name="is_registered" string="Active" widget="boolean"/>
+                                        <field name="registered_at"/>
+                                        <field name="last_received_at"/>
+                                        <field name="events_received_count" string="Received"/>
+                                        <field name="events_failed_count" string="Failed"/>
+                                    </list>
+                                </field>
+                            </group>
+                            <div class="mt-3" invisible="not webhook_registered">
+                                <p class="text-muted">
+                                    <strong>Subscribed Events:</strong> Order Created, Order Updated, Order Failed, Order Canceled,
+                                    Package Shipped, Package Returned, Product Synced, Product Updated, Product Deleted, Stock Updated
+                                </p>
+                            </div>
                         </page>
                         <page string="Branding" name="branding">
                             <div class="alert alert-info" role="alert">
