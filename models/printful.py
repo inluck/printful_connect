@@ -699,7 +699,7 @@ class PrintfulPrintful(models.Model):
             }
             if description:
                 template_vals['description_sale'] = description
-                template_vals['website_description'] = description
+                template_vals['description_ecommerce'] = description
             product_template.write(template_vals)
 
         # Extract size and color
