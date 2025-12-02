@@ -4,6 +4,7 @@ import base64
 import json
 import time
 import threading
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, timedelta
 from html import escape as html_escape
 from tabulate import tabulate
@@ -460,11 +461,12 @@ class PrintfulPrintful(models.Model):
             # Create or update product template
             product_template = self._upsert_product_template(sync_product, headers)
 
-        # Calculate lowest price for base price
+        # Calculate lowest price for base price using Decimal for precision
+        # This avoids float precision issues (e.g., 19.99 + 5.00 != 24.99 in float)
         lowest_price = min(
-            float(sv.get('retail_price', 0))
+            Decimal(str(sv.get('retail_price', 0)))
             for sv in sync_variants
-        ) if sync_variants else 0
+        ) if sync_variants else Decimal('0')
 
         # Track attribute lines for the product
         size_attribute_line = None
@@ -686,9 +688,11 @@ class PrintfulPrintful(models.Model):
         result['size'] = size_value
         result['color'] = color_value
 
-        # Calculate price
-        retail_price = float(sync_variant.get('retail_price', 0))
-        price_extra = retail_price - float(lowest_price)
+        # Calculate price using Decimal for precision
+        retail_price = Decimal(str(sync_variant.get('retail_price', 0)))
+        price_extra = float((retail_price - lowest_price).quantize(
+            Decimal('0.01'), rounding=ROUND_HALF_UP
+        ))
 
         # Process size attribute
         if size_value and config.size_attribute_id:
@@ -753,10 +757,13 @@ class PrintfulPrintful(models.Model):
                 size_guide_cache,
             )
 
-            # Update variant
+            # Update variant - convert Decimal to float for ORM compatibility
+            lowest_price_float = float(lowest_price.quantize(
+                Decimal('0.01'), rounding=ROUND_HALF_UP
+            ))
             variant_vals = {
-                'list_price': lowest_price,
-                'standard_price': float(lowest_price),
+                'list_price': lowest_price_float,
+                'standard_price': lowest_price_float,
                 'default_code': sync_variant.get('sku', ''),
                 'printful_variant_ref': str(sync_variant.get('external_id', '')),
                 'printful_variant_id': str(variant_id),

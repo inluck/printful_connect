@@ -322,22 +322,42 @@ class SaleOrder(models.Model):
         _logger.info("Pushing order %s to Printful with external_id %s", self.name, external_id)
 
         try:
-            # Use savepoint for atomic operation
-            with self.env.cr.savepoint():
-                # Step 1: Create order in Printful
-                create_result = self._create_printful_order(order_data, headers)
+            # Step 1: Create order in Printful
+            create_result = self._create_printful_order(order_data, headers)
 
-                # Update order with creation response (within savepoint)
-                self._update_from_printful_response(create_result)
-                _logger.info("Order %s created in Printful with ID %s",
-                           self.name, create_result['result'].get('id'))
+            # CRITICAL: Immediately persist external_id to prevent orphaned orders
+            # This ensures we track the Printful order even if confirmation fails
+            printful_order_id = create_result['result'].get('id')
+            self.write({
+                'order_external_ref': external_id,
+                'order_ref': str(printful_order_id) if printful_order_id else '',
+                'printful_fulfillment_status': 'pending',
+            })
+            # Force commit of external_id to prevent loss on later failure
+            self.env.cr.commit()
 
-                # Step 2: Confirm the order
+            _logger.info("Order %s created in Printful with ID %s",
+                       self.name, printful_order_id)
+
+            # Step 2: Confirm the order
+            try:
                 confirm_result = self._confirm_printful_order(create_result, headers)
 
-                # Update with confirmation response
+                # Update with full confirmation response
                 self._update_from_printful_response(confirm_result)
                 _logger.info("Order %s confirmed in Printful", self.name)
+
+            except (requests.exceptions.RequestException, UserError) as confirm_error:
+                # Confirmation failed but order was created - update status and re-raise
+                self.write({'printful_fulfillment_status': 'pending'})
+                self.message_post(
+                    body=_(
+                        "⚠️ Order was created in Printful (ID: %s) but confirmation failed: %s\n\n"
+                        "The order may need to be confirmed manually in the Printful dashboard."
+                    ) % (printful_order_id, str(confirm_error)),
+                    message_type='notification',
+                )
+                raise
 
         except requests.exceptions.Timeout:
             _logger.error("Timeout while pushing order %s to Printful", self.name)
@@ -448,7 +468,8 @@ class SaleOrder(models.Model):
             )
 
             if is_shipping_line:
-                shipping_cost = line.price_subtotal
+                # Accumulate all shipping/handling fees instead of overwriting
+                shipping_cost += line.price_subtotal
                 continue
 
             if line.product_id.printful_variant_ref:
