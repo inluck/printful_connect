@@ -18,11 +18,14 @@ class SaleOrder(models.Model):
     """
     Extension of sale.order to handle Printful order synchronization.
 
-    Inherits portal.mixin to enable customer portal access with secure tokens.
+    sale.order already inherits from portal.mixin, which provides:
+    - access_token for secure public URL access
+    - access_url computed field
+    - Portal sharing functionality
+
     This allows customers to track their Printful orders via portal links.
     """
-    _inherit = ['sale.order', 'portal.mixin']
-    _name = 'sale.order'
+    _inherit = 'sale.order'
 
     def _compute_access_url(self):
         """Compute the portal access URL for orders."""
@@ -386,6 +389,11 @@ class SaleOrder(models.Model):
                 self._update_from_printful_response(confirm_result)
                 _logger.info("Order %s confirmed in Printful", self.name)
 
+                # Send customer confirmation email
+                self._send_printful_customer_email(
+                    'printful_connect.mail_template_printful_order_confirmed'
+                )
+
             except (requests.exceptions.RequestException, UserError) as confirm_error:
                 # Confirmation failed but order was created - update status and re-raise
                 self.write({'printful_fulfillment_status': 'pending'})
@@ -687,6 +695,55 @@ class SaleOrder(models.Model):
             'profit': pricing.get('profit', 0),
             'currency_symbol': pricing.get('currency_symbol', ''),
         })
+
+    def _send_printful_customer_email(self, template_xmlid):
+        """
+        Send a customer notification email using the specified template.
+
+        Args:
+            template_xmlid: The XML ID of the mail.template to use
+                           (e.g., 'printful_connect.mail_template_printful_order_confirmed')
+
+        Note:
+            - Emails are sent asynchronously via mail queue to avoid blocking
+            - Template must exist or sending is silently skipped with warning
+            - Customer's email address must be set on partner
+        """
+        self.ensure_one()
+
+        if not self.partner_id.email:
+            _logger.warning(
+                "Cannot send customer email for order %s: no customer email",
+                self.name
+            )
+            return
+
+        try:
+            template = self.env.ref(template_xmlid, raise_if_not_found=False)
+            if not template:
+                _logger.warning(
+                    "Email template %s not found, skipping customer notification",
+                    template_xmlid
+                )
+                return
+
+            # Send email with force_send=False to use mail queue
+            # This prevents blocking on slow mail servers
+            template.send_mail(
+                self.id,
+                force_send=False,
+                raise_exception=False,
+            )
+            _logger.info(
+                "Queued customer email '%s' for order %s to %s",
+                template.name, self.name, self.partner_id.email
+            )
+        except Exception as e:
+            # Log but don't fail - customer email is not critical path
+            _logger.exception(
+                "Failed to send customer email for order %s: %s",
+                self.name, str(e)
+            )
 
 
 class ResPartner(models.Model):
