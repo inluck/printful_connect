@@ -1292,7 +1292,7 @@ class PrintfulPrintful(models.Model):
             'Content-Type': 'application/json',
         }
 
-    def _make_api_request(self, url, headers, timeout=30):
+    def _make_api_request(self, url, headers, timeout=30, max_retries=3):
         """
         Make a rate-limited API GET request using leaky bucket algorithm.
 
@@ -1300,32 +1300,50 @@ class PrintfulPrintful(models.Model):
             url: API endpoint URL
             headers: Request headers (including auth)
             timeout: Request timeout in seconds
+            max_retries: Maximum number of retry attempts for rate limiting (default: 3)
 
         Returns:
             requests.Response object
+
+        Raises:
+            requests.exceptions.HTTPError: If rate limit retries exhausted or other HTTP error
         """
         config = self
-        if config.token:
-            limiter = config._get_rate_limiter()
-            limiter.acquire()
+        retry_count = 0
 
-        response = requests.get(url, headers=headers, timeout=timeout)
+        while True:
+            if config.token:
+                limiter = config._get_rate_limiter()
+                limiter.acquire()
 
-        # Update rate limiter from response headers
-        if config.token:
-            limiter.update_from_headers(response.headers)
+            response = requests.get(url, headers=headers, timeout=timeout)
 
-        if response.status_code == 429:
-            # Rate limited - wait and retry once
-            retry_after = int(response.headers.get('Retry-After', 5))
-            _logger.warning("Rate limited. Waiting %d seconds before retry.", retry_after)
-            time.sleep(retry_after)
-            return self._make_api_request(url, headers, timeout)
+            # Update rate limiter from response headers
+            if config.token:
+                limiter.update_from_headers(response.headers)
 
-        response.raise_for_status()
-        return response
+            if response.status_code == 429:
+                retry_count += 1
+                if retry_count > max_retries:
+                    _logger.error(
+                        "Rate limit retries exhausted (%d/%d) for URL: %s",
+                        retry_count, max_retries, url
+                    )
+                    response.raise_for_status()  # Will raise HTTPError
 
-    def _make_api_post_request(self, url, headers, data, timeout=30):
+                # Rate limited - wait and retry
+                retry_after = int(response.headers.get('Retry-After', 5))
+                _logger.warning(
+                    "Rate limited. Waiting %d seconds before retry (%d/%d).",
+                    retry_after, retry_count, max_retries
+                )
+                time.sleep(retry_after)
+                continue  # Retry the loop
+
+            response.raise_for_status()
+            return response
+
+    def _make_api_post_request(self, url, headers, data, timeout=30, max_retries=3):
         """
         Make a rate-limited API POST request using leaky bucket algorithm.
 
@@ -1334,30 +1352,48 @@ class PrintfulPrintful(models.Model):
             headers: Request headers (including auth)
             data: JSON-serializable request body
             timeout: Request timeout in seconds
+            max_retries: Maximum number of retry attempts for rate limiting (default: 3)
 
         Returns:
             requests.Response object
+
+        Raises:
+            requests.exceptions.HTTPError: If rate limit retries exhausted or other HTTP error
         """
         config = self
-        if config.token:
-            limiter = config._get_rate_limiter()
-            limiter.acquire()
+        retry_count = 0
 
-        response = requests.post(url, headers=headers, json=data, timeout=timeout)
+        while True:
+            if config.token:
+                limiter = config._get_rate_limiter()
+                limiter.acquire()
 
-        # Update rate limiter from response headers
-        if config.token:
-            limiter.update_from_headers(response.headers)
+            response = requests.post(url, headers=headers, json=data, timeout=timeout)
 
-        if response.status_code == 429:
-            # Rate limited - wait and retry once
-            retry_after = int(response.headers.get('Retry-After', 5))
-            _logger.warning("Rate limited. Waiting %d seconds before retry.", retry_after)
-            time.sleep(retry_after)
-            return self._make_api_post_request(url, headers, data, timeout)
+            # Update rate limiter from response headers
+            if config.token:
+                limiter.update_from_headers(response.headers)
 
-        response.raise_for_status()
-        return response
+            if response.status_code == 429:
+                retry_count += 1
+                if retry_count > max_retries:
+                    _logger.error(
+                        "Rate limit retries exhausted (%d/%d) for POST URL: %s",
+                        retry_count, max_retries, url
+                    )
+                    response.raise_for_status()  # Will raise HTTPError
+
+                # Rate limited - wait and retry
+                retry_after = int(response.headers.get('Retry-After', 5))
+                _logger.warning(
+                    "Rate limited. Waiting %d seconds before retry (%d/%d).",
+                    retry_after, retry_count, max_retries
+                )
+                time.sleep(retry_after)
+                continue  # Retry the loop
+
+            response.raise_for_status()
+            return response
 
     # ==========================================
     # V2 SHIPPING RATE METHODS
@@ -1482,34 +1518,61 @@ class PrintfulPrintful(models.Model):
         # Build cache key
         variant_data = json.dumps(sorted(items, key=lambda x: x.get('variant_id', '')))
 
-        # Check cache
+        # Check cache - collect all cached rates for this request
+        cached_rates = []
+        all_methods_cached = True
+
         for method in self.shipping_method_ids:
             cached = ShippingRateCache.get_cached_rate(
                 country_code, state_code, zip_code, variant_data, method.printful_method_id
             )
             if cached:
                 _logger.debug("Using cached shipping rate for %s", method.printful_method_id)
-                # Return cached rates
-                continue
+                cached_rates.append({
+                    'id': cached.printful_method,
+                    'name': method.name,
+                    'rate': cached.rate,
+                    'currency': cached.currency,
+                    'min_delivery_days': cached.min_delivery_days,
+                    'max_delivery_days': cached.max_delivery_days,
+                })
+            else:
+                all_methods_cached = False
 
-        # Get fresh rates
+        # Return cached rates if we have valid cache for all configured methods
+        if cached_rates and all_methods_cached:
+            _logger.debug("Returning %d cached shipping rates", len(cached_rates))
+            return cached_rates
+
+        # Get fresh rates from API
         rates = self._get_shipping_rates_v2(country_code, state_code, zip_code, items)
 
         # Cache the results
         cache_expires = fields.Datetime.now() + timedelta(minutes=self.shipping_cache_ttl)
         for rate in rates:
-            ShippingRateCache.create({
-                'country_code': country_code,
-                'state_code': state_code or False,
-                'zip_code': zip_code or False,
-                'product_variant_ids': variant_data,
-                'printful_method': rate['id'],
-                'rate': rate['rate'],
-                'currency': rate['currency'],
-                'min_delivery_days': rate.get('min_delivery_days'),
-                'max_delivery_days': rate.get('max_delivery_days'),
-                'printful_config_id': self.id,
-                'expires_at': cache_expires,
-            })
+            # Check if this rate is already cached (avoid duplicates)
+            existing_cache = ShippingRateCache.search([
+                ('country_code', '=', country_code),
+                ('state_code', '=', state_code or False),
+                ('zip_code', '=', zip_code or False),
+                ('product_variant_ids', '=', variant_data),
+                ('printful_method', '=', rate['id']),
+                ('expires_at', '>', fields.Datetime.now()),
+            ], limit=1)
+
+            if not existing_cache:
+                ShippingRateCache.create({
+                    'country_code': country_code,
+                    'state_code': state_code or False,
+                    'zip_code': zip_code or False,
+                    'product_variant_ids': variant_data,
+                    'printful_method': rate['id'],
+                    'rate': rate['rate'],
+                    'currency': rate['currency'],
+                    'min_delivery_days': rate.get('min_delivery_days'),
+                    'max_delivery_days': rate.get('max_delivery_days'),
+                    'printful_config_id': self.id,
+                    'expires_at': cache_expires,
+                })
 
         return rates
