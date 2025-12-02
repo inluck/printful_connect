@@ -2,7 +2,7 @@
 import json
 import logging
 
-from odoo import http, _
+from odoo import fields, http, _
 from odoo.http import request
 from odoo.addons.website_sale.controllers.main import WebsiteSale
 
@@ -155,7 +155,7 @@ class PrintfulWebhookController(http.Controller):
             })
 
             # Update webhook last received timestamp
-            webhook.write({'last_received_at': request.env['fields'].Datetime.now()})
+            webhook.write({'last_received_at': fields.Datetime.now()})
 
             # Process event immediately (or defer to cron for heavy processing)
             try:
