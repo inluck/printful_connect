@@ -323,10 +323,12 @@ class PrintfulWebhookEvent(models.Model):
 
         if sale_order:
             self.sale_order_id = sale_order.id
+            # Update fulfillment status
+            sale_order.write({'printful_fulfillment_status': 'failed'})
             # Add note about failure
             failure_reason = order_data.get('error_message', 'Unknown reason')
             sale_order.message_post(
-                body=_("Printful order failed: %s") % failure_reason,
+                body=_("❌ Printful order failed: %s") % failure_reason,
                 message_type='notification',
             )
             _logger.warning(
@@ -341,8 +343,9 @@ class PrintfulWebhookEvent(models.Model):
 
         if sale_order:
             self.sale_order_id = sale_order.id
+            sale_order.write({'printful_fulfillment_status': 'canceled'})
             sale_order.message_post(
-                body=_("Printful order has been canceled."),
+                body=_("🚫 Printful order has been canceled."),
                 message_type='notification',
             )
             _logger.info("Order canceled event for %s", sale_order.name)
@@ -364,19 +367,39 @@ class PrintfulWebhookEvent(models.Model):
             ship_date = shipment_data.get('ship_date', '')
             estimated_delivery = shipment_data.get('estimated_delivery', '')
 
+            # Parse ship date if provided
+            shipped_at = False
+            if ship_date:
+                try:
+                    from datetime import datetime
+                    # Try ISO format first
+                    if 'T' in ship_date:
+                        shipped_at = datetime.fromisoformat(ship_date.replace('Z', '+00:00'))
+                    else:
+                        shipped_at = datetime.strptime(ship_date, '%Y-%m-%d')
+                except (ValueError, TypeError):
+                    _logger.warning("Could not parse ship date: %s", ship_date)
+
             # Update sale order with tracking info
             update_vals = {
                 'order_shipping': carrier,
+                'printful_tracking_carrier': carrier,
+                'printful_tracking_number': tracking_number,
+                'printful_tracking_url': tracking_url,
+                'printful_estimated_delivery': estimated_delivery,
+                'printful_fulfillment_status': 'shipped',
             }
+            if shipped_at:
+                update_vals['printful_shipped_at'] = shipped_at
 
             # Build tracking message
-            tracking_msg = _("<strong>Package Shipped!</strong><br/>")
+            tracking_msg = _("<strong>📦 Package Shipped!</strong><br/>")
             if carrier:
                 tracking_msg += _("Carrier: %s<br/>") % carrier
             if tracking_number:
                 tracking_msg += _("Tracking Number: %s<br/>") % tracking_number
             if tracking_url:
-                tracking_msg += _('<a href="%s" target="_blank">Track Package</a><br/>') % tracking_url
+                tracking_msg += _('<a href="%s" target="_blank">🔗 Track Package</a><br/>') % tracking_url
             if estimated_delivery:
                 tracking_msg += _("Estimated Delivery: %s") % estimated_delivery
 
@@ -398,9 +421,10 @@ class PrintfulWebhookEvent(models.Model):
 
         if sale_order:
             self.sale_order_id = sale_order.id
+            sale_order.write({'printful_fulfillment_status': 'returned'})
             return_reason = payload.get('data', {}).get('reason', 'Unknown reason')
             sale_order.message_post(
-                body=_("Package returned: %s") % return_reason,
+                body=_("↩️ Package returned: %s") % return_reason,
                 message_type='notification',
             )
 

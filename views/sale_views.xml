@@ -57,6 +57,46 @@
                         </group>
                     </group>
                 </page>
+                <page string="Tracking" name="tracking_tab">
+                    <div class="row mb-3" invisible="not printful_tracking_number">
+                        <div class="col-12">
+                            <div class="alert alert-success mb-0">
+                                <h4 class="alert-heading mb-2">Package Shipped!</h4>
+                                <p class="mb-1">
+                                    <strong>Carrier:</strong> <field name="printful_tracking_carrier" readonly="1" class="d-inline"/>
+                                </p>
+                                <p class="mb-1">
+                                    <strong>Tracking Number:</strong> <field name="printful_tracking_number" readonly="1" class="d-inline"/>
+                                </p>
+                                <p class="mb-1" invisible="not printful_tracking_url">
+                                    <a class="btn btn-primary btn-sm">
+                                        <field name="printful_tracking_url" widget="url" readonly="1" text="Track Package"/>
+                                    </a>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <group>
+                        <group string="Fulfillment Status">
+                            <field name="printful_fulfillment_status" readonly="1" widget="badge"
+                                   decoration-info="printful_fulfillment_status == 'pending'"
+                                   decoration-warning="printful_fulfillment_status == 'in_production'"
+                                   decoration-success="printful_fulfillment_status in ('shipped', 'delivered')"
+                                   decoration-danger="printful_fulfillment_status in ('failed', 'canceled', 'returned')"/>
+                            <field name="printful_shipped_at" readonly="1"/>
+                            <field name="printful_estimated_delivery" readonly="1"/>
+                        </group>
+                        <group string="Tracking Details">
+                            <field name="printful_tracking_carrier" readonly="1"/>
+                            <field name="printful_tracking_number" readonly="1"/>
+                            <field name="printful_tracking_url" widget="url" readonly="1"/>
+                        </group>
+                    </group>
+                    <div class="alert alert-info" invisible="printful_tracking_number">
+                        <strong>No tracking information available yet.</strong><br/>
+                        Tracking details will appear here once the package has been shipped.
+                    </div>
+                </page>
             </xpath>
 
             <!-- Filter order line products to Printful in-stock items -->

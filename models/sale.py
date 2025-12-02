@@ -55,6 +55,38 @@ class SaleOrder(models.Model):
     profit = fields.Float(string='Profit')
     currency_symbol = fields.Char(string='Currency Symbol')
 
+    # Tracking information
+    printful_tracking_carrier = fields.Char(
+        string='Carrier',
+        help='Shipping carrier name',
+    )
+    printful_tracking_number = fields.Char(
+        string='Tracking Number',
+        help='Package tracking number',
+    )
+    printful_tracking_url = fields.Char(
+        string='Tracking URL',
+        help='URL to track the shipment',
+    )
+    printful_shipped_at = fields.Datetime(
+        string='Shipped At',
+        help='Date and time when the package was shipped',
+    )
+    printful_estimated_delivery = fields.Char(
+        string='Estimated Delivery',
+        help='Estimated delivery date or date range',
+    )
+    printful_fulfillment_status = fields.Selection([
+        ('pending', 'Pending'),
+        ('in_production', 'In Production'),
+        ('shipped', 'Shipped'),
+        ('delivered', 'Delivered'),
+        ('returned', 'Returned'),
+        ('canceled', 'Canceled'),
+        ('failed', 'Failed'),
+    ], string='Fulfillment Status', default='pending',
+        help='Current status of Printful fulfillment')
+
     # Related partner fields
     tax_number = fields.Char(related='partner_id.tax_number', string='Tax Number')
     company = fields.Char(related='partner_id.company', string='Company')
@@ -63,6 +95,99 @@ class SaleOrder(models.Model):
         """Push this order to Printful for fulfillment."""
         for rec in self:
             rec._push_to_printful()
+
+    def action_confirm(self):
+        """
+        Override order confirmation to automatically push to Printful when enabled.
+
+        The auto-fulfillment feature:
+        - Only triggers if auto_fulfill_orders is enabled in Printful config
+        - Only processes orders containing Printful products
+        - Silently skips orders that fail validation (logs warning instead of blocking)
+        - Does not block order confirmation even if Printful push fails
+        """
+        # First, complete the standard confirmation
+        result = super().action_confirm()
+
+        # Check if auto-fulfillment is enabled
+        printful_config = self.env['printful.printful'].search([], limit=1)
+        if not printful_config or not printful_config.auto_fulfill_orders:
+            return result
+
+        if not printful_config.token:
+            _logger.warning(
+                "Auto-fulfillment enabled but Printful API token not configured"
+            )
+            return result
+
+        # Process each confirmed order
+        for order in self:
+            # Skip if already pushed to Printful
+            if order.order_external_ref:
+                _logger.debug(
+                    "Order %s already pushed to Printful, skipping auto-fulfill",
+                    order.name
+                )
+                continue
+
+            # Check if order contains any Printful products
+            has_printful_products = any(
+                line.product_id and line.product_id.printful_variant_ref
+                for line in order.order_line
+                if not (
+                    getattr(line.product_id, 'is_delivery_product', False) or
+                    (line.product_id.type == 'service' and
+                     any(kw in (line.name or '').lower()
+                         for kw in ['delivery', 'shipping']))
+                )
+            )
+
+            if not has_printful_products:
+                _logger.debug(
+                    "Order %s has no Printful products, skipping auto-fulfill",
+                    order.name
+                )
+                continue
+
+            # Attempt to push order to Printful
+            try:
+                order._push_to_printful()
+                _logger.info(
+                    "Auto-fulfilled order %s to Printful (External ID: %s)",
+                    order.name, order.order_external_ref
+                )
+            except UserError as e:
+                # Log validation failures but don't block order confirmation
+                _logger.warning(
+                    "Auto-fulfillment failed for order %s: %s. "
+                    "Order can be pushed manually.",
+                    order.name, str(e)
+                )
+                # Post a message to the order chatter for visibility
+                order.message_post(
+                    body=_(
+                        "⚠️ Auto-fulfillment to Printful failed: %s\n\n"
+                        "You can push this order manually using the "
+                        "'Push Order to Printful' button."
+                    ) % str(e),
+                    message_type='notification',
+                )
+            except Exception as e:
+                # Log unexpected errors but don't block order confirmation
+                _logger.exception(
+                    "Unexpected error during auto-fulfillment of order %s",
+                    order.name
+                )
+                order.message_post(
+                    body=_(
+                        "⚠️ Auto-fulfillment to Printful encountered an error: %s\n\n"
+                        "You can push this order manually using the "
+                        "'Push Order to Printful' button."
+                    ) % str(e),
+                    message_type='notification',
+                )
+
+        return result
 
     def _validate_order_for_printful(self):
         """
@@ -365,6 +490,26 @@ class SaleOrder(models.Model):
                     shipping_method
                 )
 
+        # Build gift message from config
+        gift_message = "Thank you for your purchase!"
+        if printful_config and printful_config.gift_message_default:
+            gift_message = printful_config.gift_message_default
+
+        # Build packing slip from config
+        packing_slip = {}
+        if printful_config:
+            if printful_config.packing_slip_email:
+                packing_slip["email"] = printful_config.packing_slip_email
+            if printful_config.packing_slip_phone:
+                packing_slip["phone"] = printful_config.packing_slip_phone
+            if printful_config.packing_slip_message:
+                # Truncate to 1024 chars as per Printful API limits
+                packing_slip["message"] = printful_config.packing_slip_message[:1024]
+            if printful_config.packing_slip_logo_url:
+                packing_slip["logo_url"] = printful_config.packing_slip_logo_url
+            if printful_config.packing_slip_store_name:
+                packing_slip["store_name"] = printful_config.packing_slip_store_name
+
         return {
             "external_id": external_id,
             "shipping": shipping_method,
@@ -379,9 +524,9 @@ class SaleOrder(models.Model):
             },
             "gift": {
                 "subject": f"To {partner.name}",
-                "message": "Enjoy your merch!",
+                "message": gift_message,
             },
-            "packing_slip": {},
+            "packing_slip": packing_slip,
         }
 
     def _update_from_printful_response(self, response_data):
