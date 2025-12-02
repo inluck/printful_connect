@@ -54,7 +54,7 @@
                 <page string="Tracking" name="tracking_tab">
                     <div class="row mb-3" invisible="not printful_tracking_number">
                         <div class="col-12">
-                            <div class="alert alert-success mb-0">
+                            <div class="alert alert-success mb-0" role="status">
                                 <h4 class="alert-heading mb-2">Package Shipped!</h4>
                                 <p class="mb-1">
                                     <strong>Carrier:</strong> <field name="printful_tracking_carrier" readonly="1" class="d-inline"/>
@@ -63,7 +63,7 @@
                                     <strong>Tracking Number:</strong> <field name="printful_tracking_number" readonly="1" class="d-inline"/>
                                 </p>
                                 <p class="mb-1" invisible="not printful_tracking_url">
-                                    <a class="btn btn-primary btn-sm">
+                                    <a class="btn btn-primary btn-sm" role="button">
                                         <field name="printful_tracking_url" widget="url" readonly="1" text="Track Package"/>
                                     </a>
                                 </p>
@@ -86,7 +86,7 @@
                             <field name="printful_tracking_url" widget="url" readonly="1"/>
                         </group>
                     </group>
-                    <div class="alert alert-info" invisible="printful_tracking_number">
+                    <div class="alert alert-info" role="status" invisible="printful_tracking_number">
                         <strong>No tracking information available yet.</strong><br/>
                         Tracking details will appear here once the package has been shipped.
                     </div>
