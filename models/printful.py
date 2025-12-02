@@ -699,7 +699,8 @@ class PrintfulPrintful(models.Model):
             }
             if description:
                 template_vals['description_sale'] = description
-                template_vals['description_ecommerce'] = description
+                # Convert newlines to <br> for HTML ecommerce description
+                template_vals['description_ecommerce'] = description.replace('\n', '<br/>')
             product_template.write(template_vals)
 
         # Extract size and color
