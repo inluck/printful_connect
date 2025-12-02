@@ -18,7 +18,7 @@
             <!-- Add tax/company fields after partner -->
             <xpath expr="//form/sheet/group[@name='sale_header']/group//field[@name='partner_id']" position="after">
                 <field name="tax_number" readonly="1"/>
-                <field name="company" readonly="1"/>
+                <field name="printful_company" readonly="1"/>
             </xpath>
 
             <!-- Add Printful tab -->

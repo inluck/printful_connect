@@ -1344,7 +1344,7 @@ class PrintfulPrintful(models.Model):
                 'email': customer_email,
                 'phone': recipient.get('phone', ''),
                 'tax_number': str(recipient.get('tax_number', '')),
-                'company': recipient.get('company', ''),
+                'printful_company': recipient.get('company', ''),
             }
             customer = Partner.create(customer_vals)
             _logger.info("Created new customer '%s' for Printful order %s",
