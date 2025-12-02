@@ -438,11 +438,7 @@
               parent="menu_printful_root"
               sequence="90"/>
 
-    <menuitem id="menu_printful_stores"
-              name="Printful Stores"
-              parent="menu_printful_config"
-              action="action_printful_view"
-              sequence="10"/>
+    <!-- Note: menu_printful_stores is defined in printful_views.xml after action_printful_view -->
 
     <!-- Sequence for queue names -->
     <record id="seq_printful_sync_queue" model="ir.sequence">
