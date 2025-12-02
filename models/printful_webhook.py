@@ -4,6 +4,7 @@ import hmac
 import json
 import logging
 from datetime import datetime, timedelta
+from markupsafe import Markup, escape as html_escape
 
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
@@ -110,18 +111,28 @@ class PrintfulWebhook(models.Model):
 
         Returns:
             True if signature is valid, False otherwise
+
+        Security Note:
+            This method requires a webhook secret to be configured.
+            Webhooks without secrets will be rejected to prevent
+            unauthorized access to order/product manipulation endpoints.
         """
         self.ensure_one()
 
         if not self.webhook_secret:
-            _logger.warning(
-                "Webhook %s has no secret configured. Skipping signature validation.",
+            _logger.error(
+                "SECURITY: Webhook %s has no secret configured. "
+                "Rejecting request. Please configure a webhook secret in Printful "
+                "dashboard and update this webhook configuration.",
                 self.name
             )
-            return True  # Allow if no secret configured (not recommended for production)
+            return False  # Reject webhooks without secret for security
 
         if not signature:
-            _logger.warning("No signature provided for webhook %s", self.name)
+            _logger.warning(
+                "SECURITY: No signature provided for webhook %s. Rejecting request.",
+                self.name
+            )
             return False
 
         # Calculate expected signature
@@ -132,7 +143,16 @@ class PrintfulWebhook(models.Model):
         ).hexdigest()
 
         # Compare signatures (timing-safe comparison)
-        return hmac.compare_digest(expected, signature)
+        is_valid = hmac.compare_digest(expected, signature)
+
+        if not is_valid:
+            _logger.warning(
+                "SECURITY: Invalid signature for webhook %s. "
+                "Expected: %s..., Got: %s...",
+                self.name, expected[:8], signature[:8] if signature else 'None'
+            )
+
+        return is_valid
 
     def get_subscribed_events(self):
         """
@@ -392,16 +412,24 @@ class PrintfulWebhookEvent(models.Model):
             if shipped_at:
                 update_vals['printful_shipped_at'] = shipped_at
 
-            # Build tracking message
-            tracking_msg = _("<strong>📦 Package Shipped!</strong><br/>")
+            # Build tracking message with XSS protection
+            # All external data must be escaped before embedding in HTML
+            tracking_msg = Markup("<strong>📦 Package Shipped!</strong><br/>")
             if carrier:
-                tracking_msg += _("Carrier: %s<br/>") % carrier
+                tracking_msg += Markup("Carrier: %s<br/>") % html_escape(carrier)
             if tracking_number:
-                tracking_msg += _("Tracking Number: %s<br/>") % tracking_number
+                tracking_msg += Markup("Tracking Number: %s<br/>") % html_escape(tracking_number)
             if tracking_url:
-                tracking_msg += _('<a href="%s" target="_blank">🔗 Track Package</a><br/>') % tracking_url
+                # Validate URL scheme to prevent javascript: URLs
+                safe_url = tracking_url if tracking_url.startswith(('http://', 'https://')) else '#'
+                if safe_url == '#':
+                    _logger.warning(
+                        "SECURITY: Rejected potentially malicious tracking URL: %s",
+                        tracking_url[:50]
+                    )
+                tracking_msg += Markup('<a href="%s" target="_blank" rel="noopener noreferrer">🔗 Track Package</a><br/>') % html_escape(safe_url)
             if estimated_delivery:
-                tracking_msg += _("Estimated Delivery: %s") % estimated_delivery
+                tracking_msg += Markup("Estimated Delivery: %s") % html_escape(estimated_delivery)
 
             sale_order.write(update_vals)
             sale_order.message_post(

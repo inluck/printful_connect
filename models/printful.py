@@ -4,6 +4,7 @@ import base64
 import json
 import time
 import threading
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, timedelta
 from html import escape as html_escape
 from tabulate import tabulate
@@ -31,18 +32,32 @@ class PrintfulRateLimiter:
     - Bucket holds up to 120 requests
     - Refills at 2 requests per second
     - Headers: X-Ratelimit-Limit, X-Ratelimit-Remaining, X-Ratelimit-Reset
+
+    Memory Management:
+    - Instances are cached per token with last-access timestamps
+    - Stale instances (unused for > 1 hour) are cleaned up periodically
+    - Call cleanup_stale_instances() to manually trigger cleanup
     """
-    _instances = {}
+    _instances = {}  # token -> (instance, last_access_time)
     _lock = threading.Lock()
+    _STALE_TIMEOUT = 3600  # 1 hour in seconds
 
     def __new__(cls, token):
         """Singleton per API token to share rate limit across all requests."""
         with cls._lock:
-            if token not in cls._instances:
-                instance = super().__new__(cls)
-                instance._initialized = False
-                cls._instances[token] = instance
-            return cls._instances[token]
+            # Cleanup stale instances periodically (every 10th access)
+            if len(cls._instances) > 0 and len(cls._instances) % 10 == 0:
+                cls._cleanup_stale_instances_unlocked()
+
+            if token in cls._instances:
+                instance, _ = cls._instances[token]
+                cls._instances[token] = (instance, time.time())  # Update last access
+                return instance
+
+            instance = super().__new__(cls)
+            instance._initialized = False
+            cls._instances[token] = (instance, time.time())
+            return instance
 
     def __init__(self, token):
         if self._initialized:
@@ -51,7 +66,39 @@ class PrintfulRateLimiter:
         self._token = token
         self._bucket = RATE_LIMIT_BUCKET_SIZE
         self._last_refill = time.time()
-        self._lock = threading.Lock()
+        self._instance_lock = threading.Lock()
+
+    @classmethod
+    def _cleanup_stale_instances_unlocked(cls):
+        """Remove stale rate limiter instances. Must be called with _lock held."""
+        now = time.time()
+        stale_tokens = [
+            token for token, (_, last_access) in cls._instances.items()
+            if now - last_access > cls._STALE_TIMEOUT
+        ]
+        for token in stale_tokens:
+            del cls._instances[token]
+            _logger.debug("Cleaned up stale rate limiter for token: %s...", token[:8] if token else 'None')
+
+    @classmethod
+    def cleanup_stale_instances(cls):
+        """Public method to clean up stale rate limiter instances."""
+        with cls._lock:
+            cls._cleanup_stale_instances_unlocked()
+
+    @classmethod
+    def remove_instance(cls, token):
+        """Remove a specific rate limiter instance (e.g., when token is rotated)."""
+        with cls._lock:
+            if token in cls._instances:
+                del cls._instances[token]
+                _logger.debug("Removed rate limiter for token: %s...", token[:8] if token else 'None')
+
+    @classmethod
+    def get_instance_count(cls):
+        """Get the number of active rate limiter instances (for monitoring)."""
+        with cls._lock:
+            return len(cls._instances)
 
     def _refill(self):
         """Refill the bucket based on elapsed time."""
@@ -72,7 +119,7 @@ class PrintfulRateLimiter:
         start_time = time.time()
 
         while True:
-            with self._lock:
+            with self._instance_lock:
                 self._refill()
                 if self._bucket >= 1:
                     self._bucket -= 1
@@ -94,7 +141,7 @@ class PrintfulRateLimiter:
         """
         remaining = headers.get('X-Ratelimit-Remaining')
         if remaining is not None:
-            with self._lock:
+            with self._instance_lock:
                 try:
                     self._bucket = int(remaining)
                 except (ValueError, TypeError):
@@ -414,11 +461,12 @@ class PrintfulPrintful(models.Model):
             # Create or update product template
             product_template = self._upsert_product_template(sync_product, headers)
 
-        # Calculate lowest price for base price
+        # Calculate lowest price for base price using Decimal for precision
+        # This avoids float precision issues (e.g., 19.99 + 5.00 != 24.99 in float)
         lowest_price = min(
-            float(sv.get('retail_price', 0))
+            Decimal(str(sv.get('retail_price', 0)))
             for sv in sync_variants
-        ) if sync_variants else 0
+        ) if sync_variants else Decimal('0')
 
         # Track attribute lines for the product
         size_attribute_line = None
@@ -640,9 +688,11 @@ class PrintfulPrintful(models.Model):
         result['size'] = size_value
         result['color'] = color_value
 
-        # Calculate price
-        retail_price = float(sync_variant.get('retail_price', 0))
-        price_extra = retail_price - float(lowest_price)
+        # Calculate price using Decimal for precision
+        retail_price = Decimal(str(sync_variant.get('retail_price', 0)))
+        price_extra = float((retail_price - lowest_price).quantize(
+            Decimal('0.01'), rounding=ROUND_HALF_UP
+        ))
 
         # Process size attribute
         if size_value and config.size_attribute_id:
@@ -707,10 +757,13 @@ class PrintfulPrintful(models.Model):
                 size_guide_cache,
             )
 
-            # Update variant
+            # Update variant - convert Decimal to float for ORM compatibility
+            lowest_price_float = float(lowest_price.quantize(
+                Decimal('0.01'), rounding=ROUND_HALF_UP
+            ))
             variant_vals = {
-                'list_price': lowest_price,
-                'standard_price': float(lowest_price),
+                'list_price': lowest_price_float,
+                'standard_price': lowest_price_float,
                 'default_code': sync_variant.get('sku', ''),
                 'printful_variant_ref': str(sync_variant.get('external_id', '')),
                 'printful_variant_id': str(variant_id),
@@ -1203,19 +1256,34 @@ class PrintfulPrintful(models.Model):
 
         # If no existing customer found, create a new one
         if not customer:
+            # Look up country by code
+            country_code = recipient.get('country_code', '')
+            country = self.env['res.country'].search([
+                ('code', '=', country_code.upper())
+            ], limit=1) if country_code else False
+
+            # Look up state by code (requires country)
+            state_code = recipient.get('state_code', '')
+            state = False
+            if state_code and country:
+                state = self.env['res.country.state'].search([
+                    ('code', '=', state_code.upper()),
+                    ('country_id', '=', country.id)
+                ], limit=1)
+                # Try with original case if not found
+                if not state:
+                    state = self.env['res.country.state'].search([
+                        ('code', '=', state_code),
+                        ('country_id', '=', country.id)
+                    ], limit=1)
+
             customer_vals = {
                 'name': recipient.get('name') or "Printful Customer",
+                'street': recipient.get('address1', ''),
+                'street2': recipient.get('address2', ''),
                 'city': recipient.get('city', ''),
-                'street': ' '.join(filter(None, [
-                    recipient.get('address1', ''),
-                    recipient.get('address2', ''),
-                    recipient.get('state_code', ''),
-                ])),
-                'street2': ' '.join(filter(None, [
-                    recipient.get('country_name', ''),
-                    recipient.get('state_name', ''),
-                    recipient.get('country_code', ''),
-                ])),
+                'state_id': state.id if state else False,
+                'country_id': country.id if country else False,
                 'zip': recipient.get('zip', ''),
                 'email': recipient.get('email', ''),
                 'phone': recipient.get('phone', ''),
@@ -1229,11 +1297,15 @@ class PrintfulPrintful(models.Model):
             _logger.info("Using existing customer '%s' (ID: %d) for Printful order %s",
                         customer.name, customer.id, order_ref)
 
-        # Create order lines
+        # Create order lines - track skipped items for audit
         lines = []
+        skipped_items = []
+        total_items = len(order.get('items', []))
+
         for item in order.get('items', []):
+            external_variant_id = str(item.get('external_variant_id', ''))
             product = self.env['product.product'].search([
-                ('printful_variant_ref', '=', str(item.get('external_variant_id')))
+                ('printful_variant_ref', '=', external_variant_id)
             ], limit=1)
 
             if product:
@@ -1244,6 +1316,28 @@ class PrintfulPrintful(models.Model):
                     'product_uom_qty': item.get('quantity', 1),
                     'tax_id': None,
                 }))
+            else:
+                # Track skipped item for logging and notification
+                skipped_items.append({
+                    'name': item.get('name', 'Unknown'),
+                    'external_variant_id': external_variant_id,
+                    'sku': item.get('sku', ''),
+                    'quantity': item.get('quantity', 1),
+                    'price': item.get('price', 0),
+                })
+                _logger.warning(
+                    "Order %s: Product with external_variant_id '%s' (SKU: %s) "
+                    "not found in Odoo. Item will be skipped.",
+                    order_ref, external_variant_id, item.get('sku', 'N/A')
+                )
+
+        # Validate we have at least some items
+        if not lines and total_items > 0:
+            _logger.error(
+                "Order %s: All %d items were skipped (products not found). "
+                "Order will be created empty.",
+                order_ref, total_items
+            )
 
         # Create sale order
         costs = order.get('costs', {})
@@ -1276,7 +1370,31 @@ class PrintfulPrintful(models.Model):
             'order_line': lines,
         }
 
-        return SaleOrder.create(so_vals)
+        sale_order = SaleOrder.create(so_vals)
+
+        # Post notification if items were skipped
+        if skipped_items:
+            skipped_msg = _(
+                "⚠️ <strong>Warning: %d of %d items could not be imported</strong><br/><br/>"
+                "The following products were not found in Odoo and were skipped:<br/>"
+            ) % (len(skipped_items), total_items)
+
+            for item in skipped_items:
+                skipped_msg += _(
+                    "• %s (SKU: %s, Qty: %d, Price: %s)<br/>"
+                ) % (item['name'], item['sku'] or 'N/A', item['quantity'], item['price'])
+
+            skipped_msg += _(
+                "<br/>Please sync products from Printful and manually add "
+                "missing items to this order if needed."
+            )
+
+            sale_order.message_post(
+                body=skipped_msg,
+                message_type='notification',
+            )
+
+        return sale_order
 
     # ==========================================
     # API HELPERS
@@ -1292,7 +1410,7 @@ class PrintfulPrintful(models.Model):
             'Content-Type': 'application/json',
         }
 
-    def _make_api_request(self, url, headers, timeout=30):
+    def _make_api_request(self, url, headers, timeout=30, max_retries=3):
         """
         Make a rate-limited API GET request using leaky bucket algorithm.
 
@@ -1300,32 +1418,50 @@ class PrintfulPrintful(models.Model):
             url: API endpoint URL
             headers: Request headers (including auth)
             timeout: Request timeout in seconds
+            max_retries: Maximum number of retry attempts for rate limiting (default: 3)
 
         Returns:
             requests.Response object
+
+        Raises:
+            requests.exceptions.HTTPError: If rate limit retries exhausted or other HTTP error
         """
         config = self
-        if config.token:
-            limiter = config._get_rate_limiter()
-            limiter.acquire()
+        retry_count = 0
 
-        response = requests.get(url, headers=headers, timeout=timeout)
+        while True:
+            if config.token:
+                limiter = config._get_rate_limiter()
+                limiter.acquire()
 
-        # Update rate limiter from response headers
-        if config.token:
-            limiter.update_from_headers(response.headers)
+            response = requests.get(url, headers=headers, timeout=timeout)
 
-        if response.status_code == 429:
-            # Rate limited - wait and retry once
-            retry_after = int(response.headers.get('Retry-After', 5))
-            _logger.warning("Rate limited. Waiting %d seconds before retry.", retry_after)
-            time.sleep(retry_after)
-            return self._make_api_request(url, headers, timeout)
+            # Update rate limiter from response headers
+            if config.token:
+                limiter.update_from_headers(response.headers)
 
-        response.raise_for_status()
-        return response
+            if response.status_code == 429:
+                retry_count += 1
+                if retry_count > max_retries:
+                    _logger.error(
+                        "Rate limit retries exhausted (%d/%d) for URL: %s",
+                        retry_count, max_retries, url
+                    )
+                    response.raise_for_status()  # Will raise HTTPError
 
-    def _make_api_post_request(self, url, headers, data, timeout=30):
+                # Rate limited - wait and retry
+                retry_after = int(response.headers.get('Retry-After', 5))
+                _logger.warning(
+                    "Rate limited. Waiting %d seconds before retry (%d/%d).",
+                    retry_after, retry_count, max_retries
+                )
+                time.sleep(retry_after)
+                continue  # Retry the loop
+
+            response.raise_for_status()
+            return response
+
+    def _make_api_post_request(self, url, headers, data, timeout=30, max_retries=3):
         """
         Make a rate-limited API POST request using leaky bucket algorithm.
 
@@ -1334,30 +1470,48 @@ class PrintfulPrintful(models.Model):
             headers: Request headers (including auth)
             data: JSON-serializable request body
             timeout: Request timeout in seconds
+            max_retries: Maximum number of retry attempts for rate limiting (default: 3)
 
         Returns:
             requests.Response object
+
+        Raises:
+            requests.exceptions.HTTPError: If rate limit retries exhausted or other HTTP error
         """
         config = self
-        if config.token:
-            limiter = config._get_rate_limiter()
-            limiter.acquire()
+        retry_count = 0
 
-        response = requests.post(url, headers=headers, json=data, timeout=timeout)
+        while True:
+            if config.token:
+                limiter = config._get_rate_limiter()
+                limiter.acquire()
 
-        # Update rate limiter from response headers
-        if config.token:
-            limiter.update_from_headers(response.headers)
+            response = requests.post(url, headers=headers, json=data, timeout=timeout)
 
-        if response.status_code == 429:
-            # Rate limited - wait and retry once
-            retry_after = int(response.headers.get('Retry-After', 5))
-            _logger.warning("Rate limited. Waiting %d seconds before retry.", retry_after)
-            time.sleep(retry_after)
-            return self._make_api_post_request(url, headers, data, timeout)
+            # Update rate limiter from response headers
+            if config.token:
+                limiter.update_from_headers(response.headers)
 
-        response.raise_for_status()
-        return response
+            if response.status_code == 429:
+                retry_count += 1
+                if retry_count > max_retries:
+                    _logger.error(
+                        "Rate limit retries exhausted (%d/%d) for POST URL: %s",
+                        retry_count, max_retries, url
+                    )
+                    response.raise_for_status()  # Will raise HTTPError
+
+                # Rate limited - wait and retry
+                retry_after = int(response.headers.get('Retry-After', 5))
+                _logger.warning(
+                    "Rate limited. Waiting %d seconds before retry (%d/%d).",
+                    retry_after, retry_count, max_retries
+                )
+                time.sleep(retry_after)
+                continue  # Retry the loop
+
+            response.raise_for_status()
+            return response
 
     # ==========================================
     # V2 SHIPPING RATE METHODS
@@ -1482,34 +1636,61 @@ class PrintfulPrintful(models.Model):
         # Build cache key
         variant_data = json.dumps(sorted(items, key=lambda x: x.get('variant_id', '')))
 
-        # Check cache
+        # Check cache - collect all cached rates for this request
+        cached_rates = []
+        all_methods_cached = True
+
         for method in self.shipping_method_ids:
             cached = ShippingRateCache.get_cached_rate(
                 country_code, state_code, zip_code, variant_data, method.printful_method_id
             )
             if cached:
                 _logger.debug("Using cached shipping rate for %s", method.printful_method_id)
-                # Return cached rates
-                continue
+                cached_rates.append({
+                    'id': cached.printful_method,
+                    'name': method.name,
+                    'rate': cached.rate,
+                    'currency': cached.currency,
+                    'min_delivery_days': cached.min_delivery_days,
+                    'max_delivery_days': cached.max_delivery_days,
+                })
+            else:
+                all_methods_cached = False
 
-        # Get fresh rates
+        # Return cached rates if we have valid cache for all configured methods
+        if cached_rates and all_methods_cached:
+            _logger.debug("Returning %d cached shipping rates", len(cached_rates))
+            return cached_rates
+
+        # Get fresh rates from API
         rates = self._get_shipping_rates_v2(country_code, state_code, zip_code, items)
 
         # Cache the results
         cache_expires = fields.Datetime.now() + timedelta(minutes=self.shipping_cache_ttl)
         for rate in rates:
-            ShippingRateCache.create({
-                'country_code': country_code,
-                'state_code': state_code or False,
-                'zip_code': zip_code or False,
-                'product_variant_ids': variant_data,
-                'printful_method': rate['id'],
-                'rate': rate['rate'],
-                'currency': rate['currency'],
-                'min_delivery_days': rate.get('min_delivery_days'),
-                'max_delivery_days': rate.get('max_delivery_days'),
-                'printful_config_id': self.id,
-                'expires_at': cache_expires,
-            })
+            # Check if this rate is already cached (avoid duplicates)
+            existing_cache = ShippingRateCache.search([
+                ('country_code', '=', country_code),
+                ('state_code', '=', state_code or False),
+                ('zip_code', '=', zip_code or False),
+                ('product_variant_ids', '=', variant_data),
+                ('printful_method', '=', rate['id']),
+                ('expires_at', '>', fields.Datetime.now()),
+            ], limit=1)
+
+            if not existing_cache:
+                ShippingRateCache.create({
+                    'country_code': country_code,
+                    'state_code': state_code or False,
+                    'zip_code': zip_code or False,
+                    'product_variant_ids': variant_data,
+                    'printful_method': rate['id'],
+                    'rate': rate['rate'],
+                    'currency': rate['currency'],
+                    'min_delivery_days': rate.get('min_delivery_days'),
+                    'max_delivery_days': rate.get('max_delivery_days'),
+                    'printful_config_id': self.id,
+                    'expires_at': cache_expires,
+                })
 
         return rates
