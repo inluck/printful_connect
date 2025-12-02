@@ -55,6 +55,38 @@ class SaleOrder(models.Model):
     profit = fields.Float(string='Profit')
     currency_symbol = fields.Char(string='Currency Symbol')
 
+    # Tracking information
+    printful_tracking_carrier = fields.Char(
+        string='Carrier',
+        help='Shipping carrier name',
+    )
+    printful_tracking_number = fields.Char(
+        string='Tracking Number',
+        help='Package tracking number',
+    )
+    printful_tracking_url = fields.Char(
+        string='Tracking URL',
+        help='URL to track the shipment',
+    )
+    printful_shipped_at = fields.Datetime(
+        string='Shipped At',
+        help='Date and time when the package was shipped',
+    )
+    printful_estimated_delivery = fields.Char(
+        string='Estimated Delivery',
+        help='Estimated delivery date or date range',
+    )
+    printful_fulfillment_status = fields.Selection([
+        ('pending', 'Pending'),
+        ('in_production', 'In Production'),
+        ('shipped', 'Shipped'),
+        ('delivered', 'Delivered'),
+        ('returned', 'Returned'),
+        ('canceled', 'Canceled'),
+        ('failed', 'Failed'),
+    ], string='Fulfillment Status', default='pending',
+        help='Current status of Printful fulfillment')
+
     # Related partner fields
     tax_number = fields.Char(related='partner_id.tax_number', string='Tax Number')
     company = fields.Char(related='partner_id.company', string='Company')
@@ -458,6 +490,26 @@ class SaleOrder(models.Model):
                     shipping_method
                 )
 
+        # Build gift message from config
+        gift_message = "Thank you for your purchase!"
+        if printful_config and printful_config.gift_message_default:
+            gift_message = printful_config.gift_message_default
+
+        # Build packing slip from config
+        packing_slip = {}
+        if printful_config:
+            if printful_config.packing_slip_email:
+                packing_slip["email"] = printful_config.packing_slip_email
+            if printful_config.packing_slip_phone:
+                packing_slip["phone"] = printful_config.packing_slip_phone
+            if printful_config.packing_slip_message:
+                # Truncate to 1024 chars as per Printful API limits
+                packing_slip["message"] = printful_config.packing_slip_message[:1024]
+            if printful_config.packing_slip_logo_url:
+                packing_slip["logo_url"] = printful_config.packing_slip_logo_url
+            if printful_config.packing_slip_store_name:
+                packing_slip["store_name"] = printful_config.packing_slip_store_name
+
         return {
             "external_id": external_id,
             "shipping": shipping_method,
@@ -472,9 +524,9 @@ class SaleOrder(models.Model):
             },
             "gift": {
                 "subject": f"To {partner.name}",
-                "message": "Enjoy your merch!",
+                "message": gift_message,
             },
-            "packing_slip": {},
+            "packing_slip": packing_slip,
         }
 
     def _update_from_printful_response(self, response_data):

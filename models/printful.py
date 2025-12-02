@@ -195,6 +195,53 @@ class PrintfulPrintful(models.Model):
              "without requiring manual intervention.",
     )
 
+    # Packing slip / Custom branding settings
+    packing_slip_email = fields.Char(
+        string="Packing Slip Email",
+        help="Store email address to display on packing slips",
+    )
+    packing_slip_phone = fields.Char(
+        string="Packing Slip Phone",
+        help="Store phone number to display on packing slips",
+    )
+    packing_slip_message = fields.Text(
+        string="Packing Slip Message",
+        help="Custom message to print on packing slips (max 1024 characters)",
+    )
+    packing_slip_logo_url = fields.Char(
+        string="Packing Slip Logo URL",
+        help="URL to your store logo for packing slips. Must be publicly accessible HTTPS URL. "
+             "Recommended size: 600x100 pixels, PNG or JPG format.",
+    )
+    packing_slip_store_name = fields.Char(
+        string="Packing Slip Store Name",
+        help="Custom store name to display on packing slips. Leave empty to use Printful store name.",
+    )
+    gift_message_default = fields.Char(
+        string="Default Gift Message",
+        default="Thank you for your purchase!",
+        help="Default message included with orders as a gift note",
+    )
+
+    # SEO Settings for Product Sync
+    seo_auto_populate = fields.Boolean(
+        string="Auto-populate SEO Fields",
+        default=True,
+        help="Automatically populate website meta title, description, and keywords "
+             "when syncing products from Printful",
+    )
+    seo_title_template = fields.Char(
+        string="SEO Title Template",
+        default="{product_name} | {brand}",
+        help="Template for meta title. Available variables: {product_name}, {brand}, {type}",
+    )
+    seo_description_template = fields.Text(
+        string="SEO Description Template",
+        default="Shop {product_name} by {brand}. {description_short}",
+        help="Template for meta description. Available variables: {product_name}, {brand}, "
+             "{type}, {description_short}",
+    )
+
     @api.depends('shipping_method_ids', 'shipping_method_ids.is_default')
     def _compute_default_shipping_method(self):
         """Get the default shipping method for this configuration."""
@@ -462,6 +509,21 @@ class PrintfulPrintful(models.Model):
                 'attribute_line_ids': attribute_lines,
             })
 
+        # Generate and apply SEO metadata if enabled
+        try:
+            seo_vals = product_template._generate_seo_metadata(config)
+            if seo_vals:
+                product_template.write(seo_vals)
+                _logger.debug(
+                    "Generated SEO metadata for product %s: %s",
+                    product_template.name, list(seo_vals.keys())
+                )
+        except Exception as e:
+            _logger.warning(
+                "Failed to generate SEO metadata for product %s: %s",
+                product_template.name, str(e)
+            )
+
         _logger.info("Successfully synced product %s: %d/%d variants",
                     sync_product.get('name'), variants_synced, len(sync_variants))
 
@@ -562,6 +624,15 @@ class PrintfulPrintful(models.Model):
 
         variant_data = variant_json['result']['variant']
         variant_product_data = variant_json['result'].get('product', {})
+
+        # Update product template with brand and type for SEO (only once per template)
+        brand = variant_product_data.get('brand', '')
+        product_type = variant_product_data.get('type', '')
+        if (brand or product_type) and not product_template.printful_brand:
+            product_template.write({
+                'printful_brand': brand,
+                'printful_type': product_type,
+            })
 
         # Extract size and color
         size_value = variant_data.get('size')

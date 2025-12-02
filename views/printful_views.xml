@@ -161,6 +161,62 @@
                                 </form>
                             </field>
                         </page>
+                        <page string="Branding" name="branding">
+                            <div class="alert alert-info" role="alert">
+                                <strong>Custom Branding</strong> allows you to personalize packing slips and gift messages
+                                sent with your Printful orders.
+                            </div>
+                            <group>
+                                <group string="Packing Slip">
+                                    <field name="packing_slip_store_name" placeholder="Your Store Name"/>
+                                    <field name="packing_slip_email" placeholder="support@yourstore.com"/>
+                                    <field name="packing_slip_phone" placeholder="+1 234 567 8900"/>
+                                    <field name="packing_slip_logo_url" placeholder="https://yoursite.com/logo.png"/>
+                                    <field name="packing_slip_message" placeholder="Thank you for your order! We hope you love your purchase."/>
+                                </group>
+                                <group string="Gift Options">
+                                    <field name="gift_message_default" placeholder="Thank you for your purchase!"/>
+                                </group>
+                            </group>
+                            <div class="alert alert-warning" role="alert">
+                                <strong>Logo URL Requirements:</strong>
+                                <ul class="mb-0">
+                                    <li>Must be a publicly accessible HTTPS URL</li>
+                                    <li>Recommended size: 600x100 pixels</li>
+                                    <li>Supported formats: PNG, JPG</li>
+                                </ul>
+                            </div>
+                        </page>
+                        <page string="SEO Settings" name="seo">
+                            <div class="alert alert-info" role="alert">
+                                <strong>SEO Settings</strong> control how product metadata is generated during sync
+                                for better search engine visibility.
+                            </div>
+                            <group>
+                                <group string="SEO Configuration">
+                                    <field name="seo_auto_populate"/>
+                                </group>
+                            </group>
+                            <group invisible="not seo_auto_populate">
+                                <group string="Meta Title Template">
+                                    <field name="seo_title_template" placeholder="{product_name} | {brand}"/>
+                                    <div class="text-muted small">
+                                        Available variables: {product_name}, {brand}, {type}
+                                    </div>
+                                </group>
+                                <group string="Meta Description Template">
+                                    <field name="seo_description_template" placeholder="Shop {product_name} by {brand}. {description_short}"/>
+                                    <div class="text-muted small">
+                                        Available variables: {product_name}, {brand}, {type}, {description_short}
+                                    </div>
+                                </group>
+                            </group>
+                            <div class="alert alert-secondary mt-3" role="alert" invisible="not seo_auto_populate">
+                                <strong>Example Output:</strong><br/>
+                                Title: "Unisex Staple T-Shirt | Bella + Canvas"<br/>
+                                Description: "Shop Unisex Staple T-Shirt by Bella + Canvas. A soft and comfortable..."
+                            </div>
+                        </page>
                     </notebook>
                 </sheet>
             </form>
