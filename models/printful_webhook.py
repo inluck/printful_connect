@@ -1041,6 +1041,8 @@ class PrintfulWebhookEvent(models.Model):
         This is the state machine dispatcher - each transition maps
         to a specific customer-friendly email template.
 
+        Also handles order completion when delivered.
+
         Args:
             sale_order: The sale.order record
             old_status: Previous fulfillment status
@@ -1079,6 +1081,53 @@ class PrintfulWebhookEvent(models.Model):
             _logger.debug(
                 "No email template for transition %s → %s",
                 old_status, new_status
+            )
+
+        # Complete the order when delivered
+        if new_status == 'delivered':
+            self._complete_order(sale_order)
+
+    def _complete_order(self, sale_order):
+        """
+        Mark a sale order as complete after successful delivery.
+
+        This locks the order from further modifications and signals
+        that the fulfillment cycle is complete.
+
+        Args:
+            sale_order: The sale.order record to complete
+        """
+        try:
+            # Check if order is already done
+            if sale_order.state == 'done':
+                _logger.debug("Order %s already in done state", sale_order.name)
+                return
+
+            # Mark the order as done (locks it)
+            # Using action_done() if available, otherwise direct state update
+            if hasattr(sale_order, 'action_done'):
+                sale_order.action_done()
+            else:
+                sale_order.write({'state': 'done'})
+
+            # Post completion message
+            sale_order.message_post(
+                body=_("Order fulfilled and delivered successfully. Order completed."),
+                message_type='notification',
+            )
+
+            _logger.info(
+                "Order %s marked as complete after delivery confirmation",
+                sale_order.name
+            )
+
+        except Exception as e:
+            # Don't fail the webhook if order completion fails
+            # The delivery was still successful
+            _logger.warning(
+                "Could not mark order %s as complete: %s. "
+                "Order may need to be closed manually.",
+                sale_order.name, str(e)
             )
 
     @api.model
