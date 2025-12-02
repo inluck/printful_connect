@@ -7,6 +7,9 @@
             <field name="model_id" ref="model_printful_sync_queue"/>
             <field name="state">code</field>
             <field name="code">
+# First, recover any stale queues (stuck for more than 30 minutes)
+model._recover_stale_queues(stale_timeout_minutes=30)
+
 # Process running queues in batches
 running_queues = model.search([('state', '=', 'running')])
 for queue in running_queues:
