@@ -23,6 +23,34 @@ for queue in running_queues:
             <field name="active" eval="True"/>
         </record>
 
+        <!-- Process pending webhook events -->
+        <record id="cron_process_webhook_events" model="ir.cron">
+            <field name="name">Printful: Process Webhook Events</field>
+            <field name="model_id" ref="model_printful_webhook_event"/>
+            <field name="state">code</field>
+            <field name="code">model.process_pending_events()</field>
+            <field name="interval_number">5</field>
+            <field name="interval_type">minutes</field>
+            <field name="numbercall">-1</field>
+            <field name="doall" eval="False"/>
+            <field name="priority">110</field>
+            <field name="active" eval="True"/>
+        </record>
+
+        <!-- Cleanup expired shipping rate cache -->
+        <record id="cron_cleanup_shipping_cache" model="ir.cron">
+            <field name="name">Printful: Cleanup Shipping Rate Cache</field>
+            <field name="model_id" ref="model_printful_shipping_rate"/>
+            <field name="state">code</field>
+            <field name="code">model.cleanup_expired()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">hours</field>
+            <field name="numbercall">-1</field>
+            <field name="doall" eval="False"/>
+            <field name="priority">200</field>
+            <field name="active" eval="True"/>
+        </record>
+
         <!-- Legacy: Full product sync (runs hourly, disabled by default) -->
         <record id="auto_create_product_cron" model="ir.cron">
             <field name="name">Printful: Legacy Full Sync (Hourly)</field>

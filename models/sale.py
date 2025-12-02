@@ -338,9 +338,36 @@ class SaleOrder(models.Model):
             else self.currency_id.name
         )
 
+        # Determine shipping method
+        # 1. Try to map from order's delivery carrier
+        # 2. Fall back to default shipping method from config
+        # 3. Fall back to STANDARD
+        shipping_method = "STANDARD"
+
+        if printful_config:
+            # Try to find mapping from delivery carrier
+            if self.carrier_id:
+                carrier_mapping = printful_config.shipping_method_ids.filtered(
+                    lambda m: m.delivery_carrier_id.id == self.carrier_id.id
+                )[:1]
+                if carrier_mapping:
+                    shipping_method = carrier_mapping.printful_method_id
+                    _logger.info(
+                        "Using shipping method %s mapped from carrier %s",
+                        shipping_method, self.carrier_id.name
+                    )
+
+            # Fall back to default shipping method if no carrier mapping
+            if shipping_method == "STANDARD" and printful_config.default_shipping_method_id:
+                shipping_method = printful_config.default_shipping_method_id.printful_method_id
+                _logger.info(
+                    "Using default shipping method: %s",
+                    shipping_method
+                )
+
         return {
             "external_id": external_id,
-            "shipping": "STANDARD",
+            "shipping": shipping_method,
             "recipient": recipient,
             "items": items,
             "retail_costs": {
@@ -400,12 +427,30 @@ class SaleOrderLine(models.Model):
     """Extension of sale.order.line for Printful products."""
     _inherit = 'sale.order.line'
 
-    price_unit = fields.Float(
-        string="Unit Price",
-        related='product_id.standard_price',
-        store=True,
-        required=True,
+    # Track if price was manually set (to prevent auto-override)
+    price_manually_set = fields.Boolean(
+        string="Price Manually Set",
+        default=False,
+        help="If checked, the price won't be auto-updated from product cost.",
     )
+
+    @api.onchange('product_id')
+    def _onchange_product_set_printful_price(self):
+        """Set price from Printful product cost when product changes, unless manually set."""
+        for line in self:
+            if line.product_id and not line.price_manually_set:
+                # Use list_price (sales price) instead of standard_price (cost)
+                # This allows proper retail pricing while keeping cost separate
+                line.price_unit = line.product_id.list_price or line.product_id.standard_price
+
+    @api.onchange('price_unit')
+    def _onchange_price_unit_mark_manual(self):
+        """Mark price as manually set when user changes it."""
+        # Only mark as manual if there's already a product selected
+        # This avoids false positives during initial line creation
+        for line in self:
+            if line.product_id and line.price_unit != line.product_id.list_price:
+                line.price_manually_set = True
 
     product_id = fields.Many2one(
         comodel_name='product.product',

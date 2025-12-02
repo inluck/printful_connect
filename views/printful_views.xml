@@ -29,29 +29,130 @@
                                 context="{'search_default_printful_config_id': active_id}">
                             <field name="sync_queue_ids" widget="statinfo" string="Sync Queues"/>
                         </button>
+                        <button name="%(printful_webhook_event_action)d"
+                                type="action"
+                                class="oe_stat_button"
+                                icon="fa-bell"
+                                context="{'search_default_printful_config_id': active_id}">
+                            <span class="o_stat_text">Webhook Events</span>
+                        </button>
                     </div>
                     <div class="oe_title">
                         <h1><field name="name" placeholder="Store Name"/></h1>
                     </div>
-                    <group>
-                        <group string="API Configuration">
-                            <field name="token" password="True" placeholder="Printful API Token"/>
-                            <field name="currency_id" options="{'no_create': True}"/>
-                        </group>
-                        <group string="Product Attributes">
-                            <field name="size_attribute_id"/>
-                            <field name="color_attribute_id"/>
-                        </group>
-                    </group>
-                    <group>
-                        <group string="Defaults">
-                            <field name="product_public_category_id"/>
-                            <field name="multiple_product_images"/>
-                        </group>
-                        <group string="Shipping">
-                            <field name="default_shipping_country_id" options="{'no_create': True}"/>
-                        </group>
-                    </group>
+                    <notebook>
+                        <page string="Configuration" name="config">
+                            <group>
+                                <group string="API Configuration">
+                                    <field name="token" password="True" placeholder="Printful API Token"/>
+                                    <field name="api_version"/>
+                                    <field name="currency_id" options="{'no_create': True}"/>
+                                </group>
+                                <group string="Product Attributes">
+                                    <field name="size_attribute_id"/>
+                                    <field name="color_attribute_id"/>
+                                </group>
+                            </group>
+                            <group>
+                                <group string="Defaults">
+                                    <field name="product_public_category_id"/>
+                                    <field name="multiple_product_images"/>
+                                </group>
+                                <group string="Legacy Shipping">
+                                    <field name="default_shipping_country_id" options="{'no_create': True}"/>
+                                    <field name="shipping_cache_ttl"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Shipping Methods" name="shipping">
+                            <group>
+                                <field name="default_shipping_method_id" readonly="1"/>
+                            </group>
+                            <field name="shipping_method_ids">
+                                <tree editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="name"/>
+                                    <field name="printful_method_id"/>
+                                    <field name="delivery_carrier_id"/>
+                                    <field name="is_default"/>
+                                    <field name="fixed_surcharge"/>
+                                    <field name="percentage_markup"/>
+                                    <field name="active"/>
+                                </tree>
+                            </field>
+                        </page>
+                        <page string="Default Addresses" name="addresses">
+                            <div class="alert alert-info" role="alert">
+                                <strong>Default Addresses</strong> are used for shipping estimates during product sync.
+                                Configure a realistic address for your primary market to get accurate delivery estimates.
+                            </div>
+                            <group>
+                                <field name="primary_default_address_id" readonly="1"/>
+                            </group>
+                            <field name="default_address_ids">
+                                <tree editable="bottom">
+                                    <field name="name"/>
+                                    <field name="country_id"/>
+                                    <field name="state_id"/>
+                                    <field name="city"/>
+                                    <field name="zip_code"/>
+                                    <field name="address1"/>
+                                    <field name="is_primary"/>
+                                    <field name="active"/>
+                                </tree>
+                            </field>
+                        </page>
+                        <page string="Webhooks" name="webhooks">
+                            <div class="alert alert-info" role="alert">
+                                <strong>Webhooks</strong> allow Printful to notify Odoo about order status changes, shipments, and product updates in real-time.
+                            </div>
+                            <field name="webhook_ids">
+                                <tree>
+                                    <field name="name"/>
+                                    <field name="webhook_url"/>
+                                    <field name="last_received_at"/>
+                                    <field name="events_received_count"/>
+                                    <field name="events_failed_count"/>
+                                    <field name="active"/>
+                                </tree>
+                                <form>
+                                    <group>
+                                        <group string="Configuration">
+                                            <field name="name"/>
+                                            <field name="active"/>
+                                            <field name="webhook_secret" password="True"/>
+                                            <field name="webhook_url" readonly="1" widget="CopyClipboardChar"/>
+                                            <field name="printful_webhook_id"/>
+                                        </group>
+                                        <group string="Statistics">
+                                            <field name="last_received_at"/>
+                                            <field name="events_received_count"/>
+                                            <field name="events_failed_count"/>
+                                        </group>
+                                    </group>
+                                    <group string="Subscribed Events">
+                                        <group>
+                                            <field name="event_order_created"/>
+                                            <field name="event_order_updated"/>
+                                            <field name="event_order_failed"/>
+                                            <field name="event_order_canceled"/>
+                                            <field name="event_package_shipped"/>
+                                        </group>
+                                        <group>
+                                            <field name="event_package_returned"/>
+                                            <field name="event_product_synced"/>
+                                            <field name="event_product_updated"/>
+                                            <field name="event_product_deleted"/>
+                                            <field name="event_stock_updated"/>
+                                        </group>
+                                    </group>
+                                    <footer>
+                                        <button name="action_test_webhook" type="object" string="Show Webhook URL" class="btn-secondary"/>
+                                    </footer>
+                                </form>
+                            </field>
+                        </page>
+                    </notebook>
                 </sheet>
             </form>
         </field>
