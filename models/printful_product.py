@@ -30,3 +30,8 @@ class ProductProduct(models.Model):
     )
     printful_shipping = fields.Char(string='Estimated Delivery')
     printful_sizeguide = fields.Html(string='Size Guide')
+    is_delivery_product = fields.Boolean(
+        string='Is Delivery Product',
+        default=False,
+        help='Check this for shipping/delivery fee products',
+    )
