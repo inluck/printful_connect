@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
-from datetime import datetime, timedelta
+from datetime import timedelta
 import logging
 
 _logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ class PrintfulSyncQueue(models.Model):
         ('done', 'Completed'),
         ('error', 'Error'),
         ('cancelled', 'Cancelled'),
-    ], string='Status', default='draft', tracking=True)
+    ], string='Status', default='draft')
 
     # Queue items
     item_ids = fields.One2many(
@@ -240,7 +240,7 @@ class PrintfulSyncQueue(models.Model):
         if not item_ids:
             # No items available (either none pending or all locked by other transactions)
             # Check if queue is actually complete
-            remaining_count = self.env.cr.execute("""
+            self.env.cr.execute("""
                 SELECT COUNT(*) FROM printful_sync_queue_item
                 WHERE queue_id = %s AND state = 'pending'
             """, (self.id,))

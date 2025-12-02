@@ -5,7 +5,7 @@ import json
 import time
 import threading
 from decimal import Decimal, ROUND_HALF_UP
-from datetime import datetime, timedelta
+from datetime import timedelta
 from html import escape as html_escape
 from tabulate import tabulate
 from odoo import api, fields, models, _
@@ -153,7 +153,7 @@ class PrintfulPrintful(models.Model):
     _description = "Printful Configuration"
 
     name = fields.Char(string="Printful Store")
-    token = fields.Char(string="Printful Token", password=True)
+    token = fields.Char(string="Printful Token")
     size_attribute_id = fields.Many2one(
         comodel_name="product.attribute",
         string="Size Attribute",
@@ -1669,7 +1669,7 @@ class PrintfulPrintful(models.Model):
 
             return rates
 
-        except Exception as e:
+        except Exception:
             _logger.exception("Failed to get shipping rates")
             return []
 

@@ -2,7 +2,7 @@
 """
 Tests for order push functionality.
 """
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 from odoo.exceptions import UserError
 from odoo.tests.common import tagged
 from .common import PrintfulTestCase

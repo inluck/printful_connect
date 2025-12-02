@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from odoo import models, fields, api, _
+from odoo import models, fields
 
 
 class ProductTemplate(models.Model):
@@ -32,7 +32,7 @@ class ProductTemplate(models.Model):
         help='Product brand from Printful catalog',
     )
     printful_type = fields.Char(
-        string='Product Type',
+        string='Printful Product Type',
         help='Product type from Printful (e.g., T-SHIRT, HOODIE)',
     )
 
