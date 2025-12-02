@@ -338,7 +338,9 @@ class PrintfulSyncQueue(models.Model):
         Returns:
             Number of queues recovered
         """
-        stale_threshold = datetime.now() - timedelta(minutes=stale_timeout_minutes)
+        # Use Odoo's fields.Datetime.now() for UTC consistency
+        # datetime.now() is timezone-naive local time, but Odoo stores in UTC
+        stale_threshold = fields.Datetime.now() - timedelta(minutes=stale_timeout_minutes)
 
         # Find queues that have been running for too long
         stale_queues = self.search([
@@ -521,6 +523,9 @@ class PrintfulSyncQueueItem(models.Model):
         """
         Callback to update sync progress.
 
+        This method is resilient to failures - progress updates are non-critical
+        and should never cause the main sync operation to fail.
+
         Note: Progress updates are committed at the end of the transaction.
         For real-time UI updates, consider using websocket notifications
         or implement this with a separate cursor:
@@ -531,12 +536,20 @@ class PrintfulSyncQueueItem(models.Model):
             item.write({...})
             new_cr.commit()
         """
-        self.write({
-            'variants_synced': variants_synced,
-            'variant_count': variant_count,
-            'color_count': colors,
-            'size_count': sizes,
-        })
+        try:
+            self.write({
+                'variants_synced': variants_synced,
+                'variant_count': variant_count,
+                'color_count': colors,
+                'size_count': sizes,
+            })
+        except Exception as e:
+            # Progress updates are non-critical - log and continue sync
+            _logger.warning(
+                "Failed to update sync progress for item %s: %s. "
+                "Sync will continue.",
+                self.name, str(e)
+            )
 
     def action_retry(self):
         """Retry syncing this product."""

@@ -395,7 +395,20 @@ class SaleOrder(models.Model):
             data=json.dumps(order_data),
             timeout=PRINTFUL_API_TIMEOUT
         )
-        result = response.json()
+
+        # Validate response before parsing JSON
+        # Non-2xx responses might return HTML error pages
+        try:
+            result = response.json()
+        except (json.JSONDecodeError, requests.exceptions.JSONDecodeError) as e:
+            _logger.error(
+                "Printful API returned non-JSON response (status %d): %s",
+                response.status_code, response.text[:500]
+            )
+            raise UserError(_(
+                'Printful API returned an invalid response (HTTP %d). '
+                'The service may be temporarily unavailable. Please try again later.'
+            ) % response.status_code)
 
         if result.get('code') != 200:
             _logger.error("Printful order creation failed: %s", result)
@@ -427,7 +440,19 @@ class SaleOrder(models.Model):
             headers=headers,
             timeout=PRINTFUL_API_TIMEOUT
         )
-        result = response.json()
+
+        # Validate response before parsing JSON
+        try:
+            result = response.json()
+        except (json.JSONDecodeError, requests.exceptions.JSONDecodeError):
+            _logger.error(
+                "Printful confirmation API returned non-JSON response (status %d): %s",
+                response.status_code, response.text[:500]
+            )
+            raise UserError(_(
+                'Printful API returned an invalid response during order confirmation (HTTP %d). '
+                'Please check Printful dashboard to verify order status. External ID: %s'
+            ) % (response.status_code, external_id))
 
         if result.get('code') != 200:
             _logger.error(
@@ -473,10 +498,30 @@ class SaleOrder(models.Model):
                 continue
 
             if line.product_id.printful_variant_ref:
+                # Validate quantity - Printful requires integer quantities
+                qty = line.product_uom_qty
+                qty_int = int(qty)
+
+                # Warn if quantity was truncated (fractional part lost)
+                if qty != qty_int:
+                    _logger.warning(
+                        "Order %s line '%s': Quantity %.2f truncated to %d for Printful. "
+                        "Printful only accepts integer quantities.",
+                        self.name, line.product_id.name, qty, qty_int
+                    )
+
+                # Skip zero or negative quantities with warning
+                if qty_int <= 0:
+                    _logger.warning(
+                        "Order %s line '%s': Skipping invalid quantity %d",
+                        self.name, line.product_id.name, qty_int
+                    )
+                    continue
+
                 items.append({
                     "variant_id": line.product_id.printful_variant_id,
                     "external_variant_id": line.product_id.printful_variant_ref,
-                    "quantity": int(line.product_uom_qty),
+                    "quantity": qty_int,
                     "price": str(line.product_id.standard_price),
                     "retail_price": str(line.product_id.standard_price),
                     "name": line.product_id.name,

@@ -463,8 +463,19 @@ class PrintfulPrintful(models.Model):
 
         # Calculate lowest price for base price using Decimal for precision
         # This avoids float precision issues (e.g., 19.99 + 5.00 != 24.99 in float)
+        # Handle None values explicitly - API might return null for retail_price
+        def safe_decimal_price(price_val):
+            """Convert price to Decimal, treating None/invalid as 0."""
+            if price_val is None:
+                return Decimal('0')
+            try:
+                return Decimal(str(price_val))
+            except Exception:
+                _logger.warning("Invalid price value %r, using 0", price_val)
+                return Decimal('0')
+
         lowest_price = min(
-            Decimal(str(sv.get('retail_price', 0)))
+            safe_decimal_price(sv.get('retail_price'))
             for sv in sync_variants
         ) if sync_variants else Decimal('0')
 
@@ -600,8 +611,17 @@ class PrintfulPrintful(models.Model):
             ('printful_ref', '=', str(sync_product['id']))
         ], limit=1)
 
+        # Handle empty/None product name - use fallback to prevent blank names
+        product_name = sync_product.get('name', '').strip()
+        if not product_name:
+            product_name = f"Printful Product #{sync_product['id']}"
+            _logger.warning(
+                "Product %s has empty name, using fallback: %s",
+                sync_product['id'], product_name
+            )
+
         vals = {
-            'name': sync_product.get('name', 'Unknown Product'),
+            'name': product_name,
             'default_code': str(sync_product.get('external_id', '')),
             'printful_ref': str(sync_product['id']),
             'printful_external_ref': str(sync_product.get('external_id', '')),
@@ -689,7 +709,17 @@ class PrintfulPrintful(models.Model):
         result['color'] = color_value
 
         # Calculate price using Decimal for precision
-        retail_price = Decimal(str(sync_variant.get('retail_price', 0)))
+        # Handle None values - API might return null for retail_price
+        raw_price = sync_variant.get('retail_price')
+        if raw_price is None:
+            _logger.warning("Variant %s has null retail_price, using 0", variant_id)
+            raw_price = 0
+        try:
+            retail_price = Decimal(str(raw_price))
+        except Exception:
+            _logger.warning("Variant %s has invalid retail_price %r, using 0", variant_id, raw_price)
+            retail_price = Decimal('0')
+
         price_extra = float((retail_price - lowest_price).quantize(
             Decimal('0.01'), rounding=ROUND_HALF_UP
         ))
@@ -1066,7 +1096,17 @@ class PrintfulPrintful(models.Model):
                     cat_data = cat_response.json()
 
                     if cat_data.get('code') == 200:
-                        cat_info = cat_data['result']['category']
+                        # Safely access nested category data
+                        cat_result = cat_data.get('result', {})
+                        cat_info = cat_result.get('category', {})
+                        if not cat_info:
+                            _logger.warning(
+                                "Category API returned empty category for ID %s",
+                                main_category_id
+                            )
+                            category_cache[main_category_id] = None
+                            continue
+
                         cat_id = self._get_or_create_category(
                             cat_info.get('title'),
                             cat_info.get('image_url'),
@@ -1148,7 +1188,20 @@ class PrintfulPrintful(models.Model):
         url = f"https://api.printful.com/store/products/{product_id}/sizes"
         response = self._make_api_request(url, headers)
         data = response.json()
-        product_info = data['result']
+
+        # Validate API response before accessing result
+        if data.get('code') != 200:
+            error_msg = data.get('error', {}).get('message', 'Unknown error')
+            _logger.warning(
+                "Size guide API returned error for product %s: %s",
+                product_id, error_msg
+            )
+            return ""
+
+        product_info = data.get('result')
+        if not product_info:
+            _logger.warning("Size guide API returned empty result for product %s", product_id)
+            return ""
 
         output_str = ""
 
@@ -1244,10 +1297,13 @@ class PrintfulPrintful(models.Model):
 
         # Find or create customer (deduplicate by email)
         recipient = order.get('recipient', {})
-        customer_email = recipient.get('email', '').strip().lower()
+        # Normalize email to lowercase for consistent storage and lookup
+        # This prevents duplicate customers with "John@Example.com" vs "john@example.com"
+        raw_email = recipient.get('email', '').strip()
+        customer_email = raw_email.lower() if raw_email else ''
         customer = None
 
-        # Try to find existing customer by email first
+        # Try to find existing customer by email first (case-insensitive search)
         if customer_email:
             customer = Partner.search([
                 ('email', '=ilike', customer_email),
@@ -1285,7 +1341,8 @@ class PrintfulPrintful(models.Model):
                 'state_id': state.id if state else False,
                 'country_id': country.id if country else False,
                 'zip': recipient.get('zip', ''),
-                'email': recipient.get('email', ''),
+                # Store normalized lowercase email for consistent lookups
+                'email': customer_email,
                 'phone': recipient.get('phone', ''),
                 'tax_number': str(recipient.get('tax_number', '')),
                 'company': recipient.get('company', ''),
