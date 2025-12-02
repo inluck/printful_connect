@@ -11,8 +11,8 @@
         - Relevant order/shipping details
 
         State Machine Flow:
-        pending → in_production → shipped → delivered
-                ↘ failed/canceled/returned (terminal states)
+        pending -> in_production -> shipped -> delivered
+                \-> failed/canceled/returned (terminal states)
     -->
 
     <!-- Template: Order Confirmed / Pushed to Printful -->
