@@ -29,7 +29,15 @@ class ProductProduct(models.Model):
         string='Printful Product',
     )
     printful_shipping = fields.Char(string='Estimated Delivery')
-    printful_sizeguide = fields.Html(string='Size Guide')
+    printful_sizeguide = fields.Html(
+        string='Size Guide',
+        sanitize=True,  # Sanitize to prevent XSS from external API data
+        sanitize_tags=True,
+        sanitize_attributes=True,
+        sanitize_style=True,
+        strip_style=False,
+        strip_classes=False,
+    )
     is_delivery_product = fields.Boolean(
         string='Is Delivery Product',
         default=False,

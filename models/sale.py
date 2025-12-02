@@ -20,8 +20,14 @@ class SaleOrder(models.Model):
     _inherit = 'sale.order'
 
     # Printful order references
-    order_ref = fields.Char(string='Printful Order ID')
-    order_external_ref = fields.Char(string='External Ref')
+    order_ref = fields.Char(
+        string='Printful Order ID',
+        index=True,  # Index for fast idempotency lookups during order import
+    )
+    order_external_ref = fields.Char(
+        string='External Ref',
+        index=True,  # Index for API lookups by external ID
+    )
     order_store_ref = fields.Char(string='Store Ref')
     order_shipping = fields.Char(string='Shipping Method')
     order_shipping_service_name = fields.Char(string='Shipping Service')

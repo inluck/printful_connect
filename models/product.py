@@ -34,7 +34,12 @@ class ProductTemplate(models.Model):
     printful_sizeguide = fields.Html(
         string='Size Guide',
         help='HTML size guide from Printful',
-        sanitize=False,  # Allow full HTML for tables
+        sanitize=True,  # Sanitize to prevent XSS from external API data
+        sanitize_tags=True,
+        sanitize_attributes=True,
+        sanitize_style=True,
+        strip_style=False,  # Preserve styling for tables
+        strip_classes=False,  # Preserve classes for formatting
     )
 
 

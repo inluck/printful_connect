@@ -118,7 +118,8 @@ class PrintfulSyncQueue(models.Model):
             raise UserError(_('Can only populate a draft queue.'))
 
         config = self.printful_config_id
-        headers = {'Authorization': 'Bearer ' + config.token}
+        # Use centralized auth method for consistent token validation
+        headers = config._get_auth_headers()
         url = "https://api.printful.com/store/products"
 
         try:
@@ -169,7 +170,14 @@ class PrintfulSyncQueue(models.Model):
             raise UserError(_('Failed to populate queue: %s') % str(e))
 
     def action_start_sync(self):
-        """Start processing the sync queue."""
+        """
+        Start processing the sync queue.
+
+        This method sets the queue state to 'running' and processes the first
+        batch of items. The cron job (cron_process_sync_queue) will continue
+        processing remaining items in batches every 2 minutes to avoid
+        HTTP request timeouts on large catalogs.
+        """
         self.ensure_one()
         if self.state not in ('pending', 'error'):
             raise UserError(_('Can only start a pending or errored queue.'))
@@ -180,25 +188,31 @@ class PrintfulSyncQueue(models.Model):
             'error_message': False,
         })
 
-        # Process items in batches
-        pending_items = self.item_ids.filtered(lambda x: x.state in ('pending', 'error'))
-        for item in pending_items:
-            try:
-                item.action_sync_product()
-            except Exception as e:
-                _logger.error("Failed to sync product %s: %s", item.name, str(e))
-                item.write({
-                    'state': 'error',
-                    'error_message': str(e),
-                })
-                continue
+        # Reset error items for retry
+        error_items = self.item_ids.filtered(lambda x: x.state == 'error')
+        if error_items:
+            error_items.write({'state': 'pending', 'error_message': False})
 
-        # Check completion status
-        if self.error_items > 0:
-            self.state = 'error'
-        else:
-            self.state = 'done'
-        self.completed_at = fields.Datetime.now()
+        # Process first batch immediately to give user feedback
+        # Remaining items will be processed by the cron job
+        self.action_process_next_batch(batch_size=5)
+
+        # Return notification to inform user about background processing
+        remaining = len(self.item_ids.filtered(lambda x: x.state == 'pending'))
+        if remaining > 0:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Sync Started'),
+                    'message': _(
+                        'First batch processed. %d products remaining will be '
+                        'synced automatically in the background (every 2 minutes).'
+                    ) % remaining,
+                    'type': 'info',
+                    'sticky': False,
+                }
+            }
 
     def action_process_next_batch(self, batch_size=5):
         """Process next batch of items. Called by cron or manually."""
@@ -268,6 +282,74 @@ class PrintfulSyncQueue(models.Model):
             'completed_at': False,
             'error_message': False,
         })
+
+    @api.model
+    def _recover_stale_queues(self, stale_timeout_minutes=30):
+        """
+        Recover queues that have been stuck in 'running' state for too long.
+
+        This handles cases where:
+        - Server crashed during sync
+        - Cron job failed unexpectedly
+        - Network issues caused sync to hang
+
+        Args:
+            stale_timeout_minutes: Minutes after which a running queue is considered stale
+
+        Returns:
+            Number of queues recovered
+        """
+        stale_threshold = datetime.now() - timedelta(minutes=stale_timeout_minutes)
+
+        # Find queues that have been running for too long
+        stale_queues = self.search([
+            ('state', '=', 'running'),
+            ('started_at', '<', stale_threshold),
+        ])
+
+        recovered_count = 0
+        for queue in stale_queues:
+            # Check if there are still pending items
+            pending_items = queue.item_ids.filtered(lambda x: x.state == 'pending')
+            in_progress_items = queue.item_ids.filtered(lambda x: x.state == 'in_progress')
+
+            # Reset any stuck "in_progress" items back to pending
+            if in_progress_items:
+                in_progress_items.write({
+                    'state': 'pending',
+                    'error_message': _('Reset due to stale queue recovery'),
+                })
+
+            if pending_items or in_progress_items:
+                # There's still work to do - keep running but log warning
+                _logger.warning(
+                    "Queue %s (ID: %d) has been running for over %d minutes. "
+                    "Resetting %d in-progress items and continuing.",
+                    queue.name, queue.id, stale_timeout_minutes, len(in_progress_items)
+                )
+            else:
+                # No pending work - mark as done or error based on results
+                if queue.error_items > 0:
+                    queue.write({
+                        'state': 'error',
+                        'completed_at': fields.Datetime.now(),
+                        'error_message': _(
+                            'Queue recovered from stale state. '
+                            'Some items failed during sync.'
+                        ),
+                    })
+                else:
+                    queue.write({
+                        'state': 'done',
+                        'completed_at': fields.Datetime.now(),
+                    })
+                _logger.info(
+                    "Recovered stale queue %s (ID: %d) - marked as %s",
+                    queue.name, queue.id, queue.state
+                )
+            recovered_count += 1
+
+        return recovered_count
 
 
 class PrintfulSyncQueueItem(models.Model):
