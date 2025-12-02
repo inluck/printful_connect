@@ -78,7 +78,7 @@
                                 <field name="default_shipping_method_id" readonly="1"/>
                             </group>
                             <field name="shipping_method_ids">
-                                <tree editable="bottom">
+                                <list editable="bottom">
                                     <field name="sequence" widget="handle"/>
                                     <field name="name"/>
                                     <field name="printful_method_id"/>
@@ -87,7 +87,7 @@
                                     <field name="fixed_surcharge"/>
                                     <field name="percentage_markup"/>
                                     <field name="active"/>
-                                </tree>
+                                </list>
                             </field>
                         </page>
                         <page string="Default Addresses" name="addresses">
@@ -99,7 +99,7 @@
                                 <field name="primary_default_address_id" readonly="1"/>
                             </group>
                             <field name="default_address_ids">
-                                <tree editable="bottom">
+                                <list editable="bottom">
                                     <field name="name"/>
                                     <field name="country_id"/>
                                     <field name="state_id"/>
@@ -108,7 +108,7 @@
                                     <field name="address1"/>
                                     <field name="is_primary"/>
                                     <field name="active"/>
-                                </tree>
+                                </list>
                             </field>
                         </page>
                         <page string="Webhooks" name="webhooks">
@@ -116,14 +116,14 @@
                                 <strong>Webhooks</strong> allow Printful to notify Odoo about order status changes, shipments, and product updates in real-time.
                             </div>
                             <field name="webhook_ids">
-                                <tree>
+                                <list>
                                     <field name="name"/>
                                     <field name="webhook_url"/>
                                     <field name="last_received_at"/>
                                     <field name="events_received_count"/>
                                     <field name="events_failed_count"/>
                                     <field name="active"/>
-                                </tree>
+                                </list>
                                 <form>
                                     <group>
                                         <group string="Configuration">
@@ -227,7 +227,7 @@
         <field name="name">printful.printful.tree</field>
         <field name="model">printful.printful</field>
         <field name="arch" type="xml">
-            <tree>
+            <list>
                 <header>
                     <button name="action_get_all_printful_products"
                             type="object"
@@ -242,14 +242,14 @@
                         string="Create Queue"
                         icon="fa-plus"
                         class="btn-link"/>
-            </tree>
+            </list>
         </field>
     </record>
 
     <record id="action_printful_view" model="ir.actions.act_window">
         <field name="name">Printful Stores</field>
         <field name="res_model">printful.printful</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
                 Configure your first Printful store
