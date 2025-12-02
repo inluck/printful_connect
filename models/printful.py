@@ -600,8 +600,17 @@ class PrintfulPrintful(models.Model):
             ('printful_ref', '=', str(sync_product['id']))
         ], limit=1)
 
+        # Handle empty/None product name - use fallback to prevent blank names
+        product_name = sync_product.get('name', '').strip()
+        if not product_name:
+            product_name = f"Printful Product #{sync_product['id']}"
+            _logger.warning(
+                "Product %s has empty name, using fallback: %s",
+                sync_product['id'], product_name
+            )
+
         vals = {
-            'name': sync_product.get('name', 'Unknown Product'),
+            'name': product_name,
             'default_code': str(sync_product.get('external_id', '')),
             'printful_ref': str(sync_product['id']),
             'printful_external_ref': str(sync_product.get('external_id', '')),
@@ -1148,7 +1157,20 @@ class PrintfulPrintful(models.Model):
         url = f"https://api.printful.com/store/products/{product_id}/sizes"
         response = self._make_api_request(url, headers)
         data = response.json()
-        product_info = data['result']
+
+        # Validate API response before accessing result
+        if data.get('code') != 200:
+            error_msg = data.get('error', {}).get('message', 'Unknown error')
+            _logger.warning(
+                "Size guide API returned error for product %s: %s",
+                product_id, error_msg
+            )
+            return ""
+
+        product_info = data.get('result')
+        if not product_info:
+            _logger.warning("Size guide API returned empty result for product %s", product_id)
+            return ""
 
         output_str = ""
 
