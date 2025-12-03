@@ -1039,18 +1039,10 @@ class PrintfulPrintful(models.Model):
                     pass
 
             product_variant.write(variant_vals)
-            _logger.info(
-                "Updated variant %s (ID: %s) with shipping: %s",
-                product_variant.display_name, product_variant.id, shipping_info or '(empty)'
-            )
 
             # Also update the product template with shipping info (for template-level display)
             if shipping_info and product_template:
                 product_template.write({'printful_shipping': shipping_info})
-                _logger.info(
-                    "Updated template %s (ID: %s) with shipping: %s",
-                    product_template.name, product_template.id, shipping_info
-                )
 
         return result
 
@@ -1261,7 +1253,7 @@ class PrintfulPrintful(models.Model):
                 "locale": "en_US"
             }
 
-            _logger.info(
+            _logger.debug(
                 "Fetching shipping rates for product %s (variant %s) to %s, %s",
                 catalog_product_id, variant_id,
                 recipient_data.get('city'), recipient_data.get('country_code')
@@ -1331,7 +1323,7 @@ class PrintfulPrintful(models.Model):
             # Cache the result for other variants of same product
             if catalog_product_id and shipping_info:
                 shipping_cache[catalog_product_id] = shipping_info
-                _logger.info(
+                _logger.debug(
                     "Shipping estimate for product %s: %s",
                     catalog_product_id, shipping_info
                 )
